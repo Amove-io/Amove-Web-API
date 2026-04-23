@@ -1,6 +1,6 @@
 # Transfer Endpoints
 
-This document provides detailed information about the transfer endpoints in the AMove API. A `Transfer` is a cloud-to-cloud (C2C) copy operation between two cloud accounts the current user can access. The lifecycle is:
+This document provides detailed information about the transfer endpoints in the Amove API. A `Transfer` is a cloud-to-cloud (C2C) copy operation between two cloud accounts the current user can access. The lifecycle is:
 
 1. **Calculate cost** — estimate the USD cost before running the transfer.
 2. **Transfer** — queue a new transfer; status progresses `Created → Running → Completed` (or `Error` / `Canceled`).

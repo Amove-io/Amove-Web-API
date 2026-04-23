@@ -1,6 +1,6 @@
 # User Endpoints
 
-This document provides detailed information about the user-related endpoints in the AMove API. These endpoints cover self-service profile operations, account-owner subscription changes, MFA enrollment, admin-side user invitation and management, and the email-token signup flow.
+This document provides detailed information about the user-related endpoints in the Amove API. These endpoints cover self-service profile operations, account-owner subscription changes, MFA enrollment, admin-side user invitation and management, and the email-token signup flow.
 
 ## Endpoints
 

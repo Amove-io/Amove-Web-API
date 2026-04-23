@@ -1,8 +1,8 @@
-# AMove API Documentation
+# Amove API Documentation
 
 ## Introduction
 
-Welcome to the AMove API documentation. This API provides a comprehensive set of endpoints for managing cloud storage, user accounts, projects, and data transfers. It allows developers to integrate AMove's cloud management capabilities into their applications.
+Welcome to the Amove API documentation. This API provides a comprehensive set of endpoints for managing cloud storage, user accounts, projects, and data transfers. It allows developers to integrate Amove's cloud management capabilities into their applications.
 
 ## Table of Contents
 
@@ -17,7 +17,7 @@ Welcome to the AMove API documentation. This API provides a comprehensive set of
 
 ## Base URLs
 
-The AMove platform exposes two public services:
+The Amove platform exposes two public services:
 
 | Service | Base URL | Purpose |
 |---|---|---|
@@ -28,7 +28,7 @@ You first obtain a JWT from the Authentication API, then use it as a Bearer toke
 
 ## Authentication
 
-AMove uses a two-step request-token handshake followed by a standard JWT bearer-token pattern:
+Amove uses a two-step request-token handshake followed by a standard JWT bearer-token pattern:
 
 1. `POST https://auth.amove.io/api/authentication/request_token` — returns a short-lived request token (60-second TTL).
 2. `POST https://auth.amove.io/api/authentication/login` with the request token and credentials — returns a JWT.
@@ -70,7 +70,7 @@ Cross-cutting documents:
 
 ## Error Model
 
-AMove uses a non-standard status code for application-level validation errors: **HTTP 499**. Successful responses use `200 OK`. Authentication failures return `401 Unauthorized`. Unexpected server errors return `500 Internal Server Error` with no body.
+Amove uses a non-standard status code for application-level validation errors: **HTTP 499**. Successful responses use `200 OK`. Authentication failures return `401 Unauthorized`. Unexpected server errors return `500 Internal Server Error` with no body.
 
 Every `499` response carries a `ValidationProblemDetails` JSON body with an `errors` dictionary keyed by an application error code (e.g., `AUTH`, `DUPLICATE`, `NOT_FOUND`), plus an `error-code` response header. See [errors.md](errors.md) for the complete reference.
 
@@ -107,7 +107,7 @@ All Main API routes are exposed under `/api/v1/<resource>/<action>`. Use this pa
 
 ## Getting Started
 
-1. Contact AMove to set up your account (https://www.amove.io).
+1. Contact Amove to set up your account (https://www.amove.io).
 2. Follow the [Authentication](authentication.md) flow to obtain a JWT.
 3. Make your first call — for example, retrieve the current user profile:
 
@@ -123,4 +123,4 @@ print(response.json())
 
 ## Support
 
-For help integrating the AMove API, visit our [Support](https://www.amove.io/support) page.
+For help integrating the Amove API, visit our [Support](https://www.amove.io/support) page.

@@ -1,6 +1,6 @@
 # Fastr License Endpoints
 
-This document provides detailed information about Fastr license endpoints in the AMove API. A license binds a Fastr server installation to a specific machine and AMove account; it must be generated for a user, activated on a machine, and periodically validated while the server runs.
+This document provides detailed information about Fastr license endpoints in the Amove API. A license binds a Fastr server installation to a specific machine and Amove account; it must be generated for a user, activated on a machine, and periodically validated while the server runs.
 
 Two endpoints — [Activate License](#activate-license) and [Validate License](#validate-license) — are `[AllowAnonymous]`. They are designed to be called by the Fastr server daemon itself on the machine where it is installed, during activation and on subsequent heartbeats. End-user integrations typically only call the other four endpoints on this page.
 
@@ -60,7 +60,7 @@ Returns a `FastrLicenseResponse`. The license is in the `Generated` state and ha
 
 Binds a previously-generated license to a specific machine. This endpoint is called by the Fastr server daemon itself during its first-run setup; it reads the license key from local configuration and posts the machine fingerprint to this URL.
 
-After a successful activation, a `FastrServer` `CloudAccount` is automatically created (or linked, if one already exists) under the license's account so that the newly-activated server becomes a usable backing store in the AMove platform.
+After a successful activation, a `FastrServer` `CloudAccount` is automatically created (or linked, if one already exists) under the license's account so that the newly-activated server becomes a usable backing store in the Amove platform.
 
 - **URL**: `/api/v1/fastrLicense/activate`
 - **Method**: POST

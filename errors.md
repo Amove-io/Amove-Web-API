@@ -2,7 +2,7 @@
 
 ## Overview
 
-The AMove API uses a non-standard HTTP status code for application-level validation errors: **499**. This cleanly separates application errors from infrastructure errors.
+The Amove API uses a non-standard HTTP status code for application-level validation errors: **499**. This cleanly separates application errors from infrastructure errors.
 
 | Status | Meaning |
 |---|---|

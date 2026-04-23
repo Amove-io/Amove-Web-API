@@ -1,6 +1,6 @@
 # Sync Endpoints
 
-This document provides detailed information about the sync endpoints in the AMove API. A sync entity replicates objects from a source cloud bucket to a destination cloud bucket on a repeating schedule. Access is restricted to `ProviderAdmin`, `AccountAdmin`, and `AccountUser`.
+This document provides detailed information about the sync endpoints in the Amove API. A sync entity replicates objects from a source cloud bucket to a destination cloud bucket on a repeating schedule. Access is restricted to `ProviderAdmin`, `AccountAdmin`, and `AccountUser`.
 
 ## Endpoints
 

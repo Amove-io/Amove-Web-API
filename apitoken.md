@@ -1,6 +1,6 @@
 # API Token Endpoints
 
-This document provides detailed information about the API-token endpoints in the AMove API. API tokens are long-lived JWT tokens a user can mint against their own account for programmatic access without going through the interactive login flow.
+This document provides detailed information about the API-token endpoints in the Amove API. API tokens are long-lived JWT tokens a user can mint against their own account for programmatic access without going through the interactive login flow.
 
 ## Endpoints
 

@@ -1,6 +1,6 @@
 # SSO Endpoints
 
-This document provides detailed information about the single-sign-on (SSO) endpoints in the AMove API. AMove supports three external identity providers per account:
+This document provides detailed information about the single-sign-on (SSO) endpoints in the Amove API. Amove supports three external identity providers per account:
 
 - **Okta** — OIDC authorization-code flow
 - **Entra ID** (formerly Azure AD) — OIDC authorization-code flow
@@ -9,7 +9,7 @@ This document provides detailed information about the single-sign-on (SSO) endpo
 A few endpoints on this controller are part of the login flow and are anonymous (`Auth Required: No`):
 
 - [Get SSO URL](#get-sso-url) — build the identity-provider redirect URL given a username
-- [Authenticate](#authenticate) — exchange an authorization code for an AMove JWT
+- [Authenticate](#authenticate) — exchange an authorization code for an Amove JWT
 - [SAML ACS](#saml-acs) — the SAML Assertion Consumer Service callback
 
 The remaining endpoints are authenticated and are used by an account administrator to configure, update, and delete the SSO provider for the account.
@@ -80,7 +80,7 @@ Given a username, resolves the account's configured SSO provider and returns a p
 }
 ```
 
-- `username` — the AMove username (email) of the user attempting to log in. Used to look up which account they belong to and therefore which SSO config to apply.
+- `username` — the Amove username (email) of the user attempting to log in. Used to look up which account they belong to and therefore which SSO config to apply.
 - `callbackUrl` — the URL of your application that the identity provider will redirect the user to after authentication.
 
 ### Response
@@ -97,7 +97,7 @@ The `provider` field indicates which flow was selected — `4` (Okta), `8` (SAML
 
 ## Authenticate
 
-Exchanges an OIDC authorization code for an AMove JWT. Used for Okta and Entra ID flows (SAML users authenticate via [SAML ACS](#saml-acs) and do not call this endpoint).
+Exchanges an OIDC authorization code for an Amove JWT. Used for Okta and Entra ID flows (SAML users authenticate via [SAML ACS](#saml-acs) and do not call this endpoint).
 
 - **URL**: `/api/v1/sso/authenticate`
 - **Method**: POST
@@ -113,13 +113,13 @@ Exchanges an OIDC authorization code for an AMove JWT. Used for Okta and Entra I
 }
 ```
 
-- `identifier` — the AMove user id for the user whose authentication is being completed.
+- `identifier` — the Amove user id for the user whose authentication is being completed.
 - `authorizationCode` — the OIDC `code` returned by the identity provider to your callback URL.
 - `callbackUrl` — the same callback URL supplied to [Get SSO URL](#get-sso-url) (used for OIDC redirect-URI verification at the IdP).
 
 ### Response
 
-A plain string containing the AMove JWT to be presented as `Authorization: Bearer <jwt>` on subsequent calls.
+A plain string containing the Amove JWT to be presented as `Authorization: Bearer <jwt>` on subsequent calls.
 
 ```
 "EXAMPLE_JWT_VALUE"
@@ -128,7 +128,7 @@ A plain string containing the AMove JWT to be presented as `Authorization: Beare
 
 ## SAML ACS
 
-SAML Assertion Consumer Service endpoint. The identity provider POSTs the SAML response here; the server validates the assertion against the stored X.509 certificate, issues an AMove JWT, and redirects the user's browser back to the client application's callback URL with the JWT as a query-string parameter.
+SAML Assertion Consumer Service endpoint. The identity provider POSTs the SAML response here; the server validates the assertion against the stored X.509 certificate, issues an Amove JWT, and redirects the user's browser back to the client application's callback URL with the JWT as a query-string parameter.
 
 - **URL**: `/api/v1/sso/saml_acs`
 - **Method**: POST
@@ -307,7 +307,7 @@ Stores the SAML SSO configuration for the authenticated user's account. The acco
 ```
 
 - `certificate` — the identity provider's X.509 certificate (PEM text).
-- `spEntityId` — the AMove service-provider entity id configured at the IdP.
+- `spEntityId` — the Amove service-provider entity id configured at the IdP.
 - `idPSSOURL` — the identity provider's SSO endpoint URL.
 
 ### Response

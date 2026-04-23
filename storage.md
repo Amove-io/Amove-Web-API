@@ -1,6 +1,6 @@
 # Storage Endpoints
 
-This document provides detailed information about the storage endpoints in the AMove API. These endpoints manage access keys and buckets on the AMove-native IDrive-backed internal storage.
+This document provides detailed information about the storage endpoints in the Amove API. These endpoints manage access keys and buckets on the Amove-native IDrive-backed internal storage.
 
 ## Endpoints
 

@@ -1,6 +1,6 @@
 # Transfer History Endpoints
 
-This document provides detailed information about the transfer-history endpoints in the AMove API. A `TransferHistory` record tracks a single transfer job (direct transfer, cloud drive upload/download, sync cycle, or Fastr transfer) with aggregated progress, timing, and throughput.
+This document provides detailed information about the transfer-history endpoints in the Amove API. A `TransferHistory` record tracks a single transfer job (direct transfer, cloud drive upload/download, sync cycle, or Fastr transfer) with aggregated progress, timing, and throughput.
 
 Access is restricted to `ProviderAdmin`, `AccountAdmin`, `AccountUser`, `DesktopAdmin`, `DesktopCreativeUser`, and `DesktopStandardUser`.
 

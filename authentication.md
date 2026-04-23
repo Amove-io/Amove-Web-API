@@ -1,10 +1,10 @@
 # Authentication
 
-This document describes the AMove Authentication API. All authentication endpoints run on a dedicated host (`https://auth.amove.io`), separate from the Main API (`https://api.amove.io`).
+This document describes the Amove Authentication API. All authentication endpoints run on a dedicated host (`https://auth.amove.io`), separate from the Main API (`https://api.amove.io`).
 
 ## Overview
 
-AMove authentication uses a **two-step request-token handshake**:
+Amove authentication uses a **two-step request-token handshake**:
 
 1. Request a short-lived **request token** (60-second TTL).
 2. Use the request token in the body of your `login` call to obtain a **JWT**.

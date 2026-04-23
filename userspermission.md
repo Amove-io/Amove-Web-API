@@ -1,6 +1,6 @@
 # Users Permission Endpoints
 
-This document provides detailed information about the permission assignment endpoints in the AMove API. Permissions attach a user or user group to a project or shared cloud drive and specify the level of access (`Read` or `ReadWrite`).
+This document provides detailed information about the permission assignment endpoints in the Amove API. Permissions attach a user or user group to a project or shared cloud drive and specify the level of access (`Read` or `ReadWrite`).
 
 The 20 endpoints are organized in four CRUD + query groups:
 

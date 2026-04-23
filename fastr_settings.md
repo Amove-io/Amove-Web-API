@@ -1,6 +1,6 @@
 # Fastr Settings Endpoints
 
-This document provides detailed information about the Fastr settings endpoints in the AMove API. A `FastrSettings` record configures how Fastr transfers data for one `(user, cloudAccount)` pair — bandwidth limits, checksum verification, and collision handling.
+This document provides detailed information about the Fastr settings endpoints in the Amove API. A `FastrSettings` record configures how Fastr transfers data for one `(user, cloudAccount)` pair — bandwidth limits, checksum verification, and collision handling.
 
 A user may have at most one settings record per cloud account; the database enforces a unique index on `(UserId, CloudAccountId)`.
 

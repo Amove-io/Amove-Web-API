@@ -1,6 +1,6 @@
 # Cloud Account Endpoints
 
-This document provides detailed information about the cloud-account endpoints in the AMove API. A `CloudAccount` represents a user's connection to an external cloud storage provider (AWS, Azure, Wasabi, an S3-compatible service, Dropbox, OneDrive, Google Drive, Box, etc.) or to an internal Amove storage tier backed by IDrive.
+This document provides detailed information about the cloud-account endpoints in the Amove API. A `CloudAccount` represents a user's connection to an external cloud storage provider (AWS, Azure, Wasabi, an S3-compatible service, Dropbox, OneDrive, Google Drive, Box, etc.) or to an internal Amove storage tier backed by IDrive.
 
 Endpoints in this controller fall into two broad groups:
 

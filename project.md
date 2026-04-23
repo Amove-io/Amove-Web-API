@@ -1,6 +1,6 @@
 # Project Endpoints
 
-This document provides detailed information about the Project-related endpoints in the AMove API. Projects are account-scoped groupings of shared cloud drives, users, and user groups.
+This document provides detailed information about the Project-related endpoints in the Amove API. Projects are account-scoped groupings of shared cloud drives, users, and user groups.
 
 ## Endpoints
 

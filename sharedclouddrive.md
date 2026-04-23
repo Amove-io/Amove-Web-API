@@ -1,6 +1,6 @@
 # Shared Cloud Drive Endpoints
 
-This document provides detailed information about the shared-cloud-drive endpoints in the AMove API. A shared cloud drive links an account and a backing `CloudAccount`/bucket so multiple users can mount it as a virtual drive or local path.
+This document provides detailed information about the shared-cloud-drive endpoints in the Amove API. A shared cloud drive links an account and a backing `CloudAccount`/bucket so multiple users can mount it as a virtual drive or local path.
 
 ## Endpoints
 

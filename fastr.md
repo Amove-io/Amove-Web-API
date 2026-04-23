@@ -1,6 +1,6 @@
 # Fastr Endpoints
 
-This document provides detailed information about the Fastr-related endpoints in the AMove API. Fastr is AMove's high-performance file-serving product, built on QUIC, that customers install on their own machines and register here so other users in the organization can discover and use them.
+This document provides detailed information about the Fastr-related endpoints in the Amove API. Fastr is Amove's high-performance file-serving product, built on QUIC, that customers install on their own machines and register here so other users in the organization can discover and use them.
 
 ## Endpoints
 

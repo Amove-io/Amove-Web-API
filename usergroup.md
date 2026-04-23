@@ -1,6 +1,6 @@
 # User Group Endpoints
 
-This document provides detailed information about the user-group endpoints in the AMove API. A user group is an account-scoped collection of users that can be granted permissions on projects and shared cloud drives collectively.
+This document provides detailed information about the user-group endpoints in the Amove API. A user group is an account-scoped collection of users that can be granted permissions on projects and shared cloud drives collectively.
 
 ## Endpoints
 
