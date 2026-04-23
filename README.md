@@ -2,107 +2,125 @@
 
 ## Introduction
 
-Welcome to the AMove API documentation. This API provides a comprehensive set of endpoints for managing cloud storage, user accounts, projects, and data transfers. It allows developers to integrate AMove's powerful cloud management capabilities into their applications.
+Welcome to the AMove API documentation. This API provides a comprehensive set of endpoints for managing cloud storage, user accounts, projects, and data transfers. It allows developers to integrate AMove's cloud management capabilities into their applications.
 
 ## Table of Contents
 
-1. [Authentication](#authentication)
-2. [API Endpoints](#api-endpoints)
-3. [Getting Started](#getting-started)
-4. [API Reference](#api-reference)
-5. [SDKs and Libraries](#sdks-and-libraries)
-6. [Examples](#examples)
-7. [Changelog](#changelog)
+1. [Base URLs](#base-urls)
+2. [Authentication](#authentication)
+3. [API Endpoints](#api-endpoints)
+4. [Error Model](#error-model)
+5. [Pagination](#pagination)
+6. [Routes and Versioning](#routes-and-versioning)
+7. [Getting Started](#getting-started)
 8. [Support](#support)
+
+## Base URLs
+
+The AMove platform exposes two public services:
+
+| Service | Base URL | Purpose |
+|---|---|---|
+| Authentication API | `https://auth.amove.io` | Obtain and manage JWT tokens |
+| Main API | `https://api.amove.io` | All other endpoints (users, cloud accounts, transfers, etc.) |
+
+You first obtain a JWT from the Authentication API, then use it as a Bearer token on every call to the Main API.
 
 ## Authentication
 
-The AMove API uses Bearer token authentication. Include your JWT token in the Authorization header of your requests:
+AMove uses a two-step request-token handshake followed by a standard JWT bearer-token pattern:
+
+1. `POST https://auth.amove.io/api/authentication/request_token` — returns a short-lived request token (60-second TTL).
+2. `POST https://auth.amove.io/api/authentication/login` with the request token and credentials — returns a JWT.
+3. Include the JWT on every subsequent call to the Main API:
 
 ```
-Authorization: Bearer <your_token_here>
+Authorization: Bearer <your_jwt_here>
 ```
 
-For more information on obtaining and using authentication tokens, please refer to our [Authentication Guide](authentication.md).
+If your account has MFA enabled, `login` returns a TOTP challenge and encrypted session instead of a JWT; complete the challenge via `mfa_respond` to obtain the JWT.
+
+See [authentication.md](authentication.md) for the full flow, MFA handling, and code samples.
 
 ## API Endpoints
 
-The AMove API is organized into the following main categories:
+The Main API is organized into these categories:
 
-- [ApiToken](apitoken.md)
-- [CloudAccount](cloudaccount.md)
-- [Desktop](desktop.md)
-- [Project](project.md)
-- [Provisioning](provisioning.md)
-- [SharedCloudDrive](sharedclouddrive.md)
-- [SSO (Single Sign-On)](sso.md)
-- [Storage](storage.md)
-- [Sync](sync.md)
-- [Transfer](transfer.md)
-- [User](user.md)
-- [UserGroup](usergroup.md)
-- [UsersPermission](userspermission.md)
+- [ApiToken](apitoken.md) — create and manage long-lived API tokens
+- [CloudAccount](cloudaccount.md) — connect external cloud storage providers
+- [Desktop](desktop.md) — desktop-client-specific endpoints (signup, presigned URLs, OAuth flows)
+- [Fastr](fastr.md) — register and manage Fastr P2P servers
+- [FastrLicense](fastr_license.md) — Fastr license generation and activation
+- [FastrSettings](fastr_settings.md) — Fastr server settings per user and cloud account
+- [Project](project.md) — project management
+- [SharedCloudDrive](sharedclouddrive.md) — shared cloud drive management
+- [SSO](sso.md) — Okta, SAML, and Entra ID single sign-on configuration
+- [Storage](storage.md) — internal storage key and bucket management
+- [Sync](sync.md) — cloud-to-cloud sync configuration
+- [Transfer](transfer.md) — cloud-to-cloud file transfers
+- [TransferHistory](transferhistory.md) — historical transfer records and trends
+- [User](user.md) — user account management
+- [UserGroup](usergroup.md) — user group management
+- [UsersPermission](userspermission.md) — project and shared drive permission assignment
 
-Each link above will take you to a detailed list of endpoints for that category.
+Cross-cutting documents:
+
+- [Authentication](authentication.md) — login, logout, MFA, password reset
+- [Error Model](errors.md) — HTTP status codes and application error codes
+
+## Error Model
+
+AMove uses a non-standard status code for application-level validation errors: **HTTP 499**. Successful responses use `200 OK`. Authentication failures return `401 Unauthorized`. Unexpected server errors return `500 Internal Server Error` with no body.
+
+Every `499` response carries a `ValidationProblemDetails` JSON body with an `errors` dictionary keyed by an application error code (e.g., `AUTH`, `DUPLICATE`, `NOT_FOUND`), plus an `error-code` response header. See [errors.md](errors.md) for the complete reference.
+
+## Pagination
+
+List endpoints follow a consistent pagination convention. They accept:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| page | integer | 1 | Starting page (1-indexed) |
+| pagesize | integer | 50 | Records per page |
+| sortfield | string | varies | Field to sort by (e.g., `CreateDate`, `Name`) |
+| descending | boolean | varies | Sort direction |
+
+Paginated responses wrap the data collection:
+
+```json
+{
+  "data": [ ],
+  "total": 123,
+  "options": {
+    "pageSize": 50,
+    "page": 1,
+    "sort": [
+      { "field": "CreateDate", "descending": true }
+    ]
+  }
+}
+```
+
+## Routes and Versioning
+
+All Main API routes are exposed under `/api/v1/<resource>/<action>`. Use this pattern in all integrations. A legacy un-versioned alias (`/api/<resource>/<action>`) exists for backward compatibility but is deprecated; do not use it in new integrations.
 
 ## Getting Started
 
-To start using the AMove API:
-
-1. [Sign up for an AMove account](https://www.amove.com/signup)
-2. [Obtain your API credentials](https://www.amove.com/dashboard/api-credentials)
-3. Make your first API call (see [Examples](#examples) below)
-
-For more detailed instructions, check out our [Getting Started Guide](getting-started.md).
-
-## API Reference
-
-Detailed documentation for each API endpoint is available in our API Reference. Please refer to the category links in the [API Endpoints](#api-endpoints) section above.
-
-## SDKs and Libraries
-
-We provide official SDKs for several popular programming languages to make integrating with the AMove API easier:
-
-- [Python SDK](https://github.com/amove/amove-python-sdk)
-- [JavaScript SDK](https://github.com/amove/amove-js-sdk)
-- [C# SDK](https://github.com/amove/amove-csharp-sdk)
-
-## Examples
-
-Here's a simple example of how to use the AMove API to list all cloud accounts using Python:
+1. Contact AMove to set up your account (https://www.amove.io).
+2. Follow the [Authentication](authentication.md) flow to obtain a JWT.
+3. Make your first call — for example, retrieve the current user profile:
 
 ```python
 import requests
 
-url = "https://api.amove.com/api/v1/cloudaccount/get_all"
-headers = {
-    "Authorization": "Bearer YOUR_TOKEN_HERE"
-}
-
-response = requests.get(url, headers=headers)
-
-if response.status_code == 200:
-    cloud_accounts = response.json()
-    for account in cloud_accounts['data']:
-        print(f"Cloud Account: {account['name']}")
-else:
-    print(f"Error: {response.status_code}")
-    print(response.text)
+response = requests.get(
+    "https://api.amove.io/api/v1/user/userinfo",
+    headers={"Authorization": "Bearer YOUR_JWT"},
+)
+print(response.json())
 ```
-
-For more examples, including usage in other programming languages, see our [Examples Directory](examples/README.md).
-
-## Changelog
-
-For information about updates and changes to the API, please refer to our [Changelog](CHANGELOG.md).
 
 ## Support
 
-If you encounter any issues or have questions about using the AMove API, please don't hesitate to:
-
-- Check our [FAQ](FAQ.md)
-- Visit our [Developer Forum](https://community.amove.com/c/api-developers)
-- Contact our [Support Team](https://www.amove.com/support)
-
-We're here to help you successfully integrate and use the AMove API in your applications!
-
+For help integrating the AMove API, visit our [Support](https://www.amove.io/support) page.

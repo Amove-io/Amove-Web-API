@@ -1,31 +1,98 @@
-# UsersPermission Endpoints
+# Users Permission Endpoints
 
-This document provides detailed information about the UsersPermission-related endpoints in the AMove API. These endpoints allow you to manage permissions for users and user groups on projects and shared cloud drives.
+This document provides detailed information about the permission assignment endpoints in the AMove API. Permissions attach a user or user group to a project or shared cloud drive and specify the level of access (`Read` or `ReadWrite`).
+
+The 20 endpoints are organized in four CRUD + query groups:
+
+- **User → Project** — grant a single user access to a project
+- **User → Shared Cloud Drive** — grant a single user access to a shared cloud drive
+- **User Group → Project** — grant an entire group access to a project
+- **User Group → Shared Cloud Drive** — grant an entire group access to a shared cloud drive
+
+All endpoints in this document require `Authorization: Bearer <JWT>`.
+
+## Permission Types
+
+The `permissionType` field uses the `ResourcePermissionType` enum:
+
+| Value | Name | Description |
+|---|---|---|
+| 1 | Read | Read-only access |
+| 2 | ReadWrite | Read and write access |
 
 ## Endpoints
 
-1. [Users Project Permission](#users-project-permission)
-2. [Get Users Assigned to Project](#get-users-assigned-to-project)
-3. [Get Projects Assigned to User](#get-projects-assigned-to-user)
-4. [Users Shared Cloud Drive Permission](#users-shared-cloud-drive-permission)
-5. [Get Users Assigned to Shared Cloud Drive](#get-users-assigned-to-shared-cloud-drive)
-6. [Get Shared Cloud Drives Assigned to User](#get-shared-cloud-drives-assigned-to-user)
-7. [User Groups Project Permission](#user-groups-project-permission)
-8. [Get User Groups Assigned to Project](#get-user-groups-assigned-to-project)
-9. [Get Projects Assigned to User Group](#get-projects-assigned-to-user-group)
-10. [User Group Shared Cloud Drive Permission](#user-group-shared-cloud-drive-permission)
-11. [Get User Groups Assigned to Shared Cloud Drive](#get-user-groups-assigned-to-shared-cloud-drive)
-12. [Get Shared Cloud Drives Assigned to User Group](#get-shared-cloud-drives-assigned-to-user-group)
+### User → Project
 
-## Users Project Permission
+1. [Add User Project Permission](#add-user-project-permission)
+2. [Edit User Project Permission](#edit-user-project-permission)
+3. [Delete User Project Permission](#delete-user-project-permission)
+4. [Get Users Assigned To Project](#get-users-assigned-to-project)
+5. [Get Projects Assigned To User](#get-projects-assigned-to-user)
 
-Apply, edit, or delete permissions of a user for a project.
+### User → Shared Cloud Drive
+
+6. [Add User Shared Cloud Drive Permission](#add-user-shared-cloud-drive-permission)
+7. [Edit User Shared Cloud Drive Permission](#edit-user-shared-cloud-drive-permission)
+8. [Delete User Shared Cloud Drive Permission](#delete-user-shared-cloud-drive-permission)
+9. [Get Users Assigned To Shared Cloud Drive](#get-users-assigned-to-shared-cloud-drive)
+10. [Get Shared Cloud Drive Assigned To User](#get-shared-cloud-drive-assigned-to-user)
+
+### User Group → Project
+
+11. [Add User Group Project Permission](#add-user-group-project-permission)
+12. [Edit User Group Project Permission](#edit-user-group-project-permission)
+13. [Delete User Group Project Permission](#delete-user-group-project-permission)
+14. [Get User Groups Assigned To Project](#get-user-groups-assigned-to-project)
+15. [Get Projects Assigned To User Group](#get-projects-assigned-to-user-group)
+
+### User Group → Shared Cloud Drive
+
+16. [Add User Group Shared Cloud Drive Permission](#add-user-group-shared-cloud-drive-permission)
+17. [Edit User Group Shared Cloud Drive Permission](#edit-user-group-shared-cloud-drive-permission)
+18. [Delete User Group Shared Cloud Drive Permission](#delete-user-group-shared-cloud-drive-permission)
+19. [Get User Groups Assigned To Shared Cloud Drive](#get-user-groups-assigned-to-shared-cloud-drive)
+20. [Get Shared Cloud Drive Assigned To User Group](#get-shared-cloud-drive-assigned-to-user-group)
+
+
+---
+
+## User → Project
+
+### Add User Project Permission
+
+Grants one or more users access to a project. The request body accepts an array so multiple assignments can be created in a single call.
 
 - **URL**: `/api/v1/permission/users_project_permission`
-- **Methods**: POST, PUT, DELETE
+- **Method**: POST
 - **Auth Required**: Yes
 
-### Request Body (POST, PUT)
+#### Request Body
+
+```json
+[
+  {
+    "userId": "string (uuid)",
+    "projectId": "string (uuid)",
+    "permissionType": "integer (ResourcePermissionType)"
+  }
+]
+```
+
+#### Response
+
+`200 OK` with an empty body.
+
+
+### Edit User Project Permission
+
+Updates one or more existing user-to-project permission records (for example, to change `Read` to `ReadWrite`).
+
+- **URL**: `/api/v1/permission/users_project_permission`
+- **Method**: PUT
+- **Auth Required**: Yes
+
+#### Request Body
 
 ```json
 [
@@ -33,76 +100,136 @@ Apply, edit, or delete permissions of a user for a project.
     "id": "string (uuid)",
     "userId": "string (uuid)",
     "projectId": "string (uuid)",
-    "permissionType": "integer (enum)"
+    "permissionType": "integer (ResourcePermissionType)"
   }
 ]
 ```
 
-### Query Parameters (DELETE)
+#### Response
+
+`200 OK` with an empty body.
+
+
+### Delete User Project Permission
+
+Removes a single user-to-project permission record by its id.
+
+- **URL**: `/api/v1/permission/users_project_permission`
+- **Method**: DELETE
+- **Auth Required**: Yes
+
+#### Query Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| id | string (uuid) | ID of the permission to delete |
+| id | string (uuid) | Permission record id. |
 
-### Response
+#### Response
 
-A successful operation returns a `200 OK` status with no body.
+`200 OK` with an empty body.
 
-## Get Users Assigned to Project
 
-Retrieves the list of users assigned to a project.
+### Get Users Assigned To Project
+
+Returns the users granted access to the given project, paginated.
 
 - **URL**: `/api/v1/permission/get_users_assigned_to_project`
 - **Method**: GET
 - **Auth Required**: Yes
 
-### Query Parameters
+#### Query Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| projectId | string (uuid) | - | Project ID |
+| projectId | string (uuid) | — | Target project id |
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "User.Username" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
-| username | string | - | Username to filter by |
+| descending | boolean | false | Sort direction |
+| username | string | null | Case-insensitive substring match on username |
 
-### Response
+#### Response
 
-Returns a collection of UserProjectPermissionDTO objects.
+Returns a `DTOCollection<UserProjectPermissionDTO>` where each row has the shape:
 
-## Get Projects Assigned to User
+```json
+{
+  "user": { },
+  "project": { },
+  "permission": {
+    "id": "string (uuid)",
+    "userId": "string (uuid)",
+    "projectId": "string (uuid)",
+    "permissionType": "integer (ResourcePermissionType)"
+  }
+}
+```
 
-Retrieves the list of projects assigned to a user.
+
+### Get Projects Assigned To User
+
+Returns the projects the given user has access to, paginated.
 
 - **URL**: `/api/v1/permission/get_projects_assigned_to_user`
 - **Method**: GET
 - **Auth Required**: Yes
 
-### Query Parameters
+#### Query Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| userId | string (uuid) | - | User ID |
+| userId | string (uuid) | — | Target user id |
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "Project.Name" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
-| name | string | - | Project name to filter by |
+| descending | boolean | false | Sort direction |
+| name | string | null | Case-insensitive substring match on project name |
 
-### Response
+#### Response
 
-Returns a collection of UserProjectPermissionDTO objects.
+Returns a `DTOCollection<UserProjectPermissionDTO>`.
 
-## Users Shared Cloud Drive Permission
 
-Apply, edit, or delete permissions of a user for a shared cloud drive.
+---
+
+## User → Shared Cloud Drive
+
+Note: the route spelling `users_sharedclouddrive_permision` has a single "s" in "permision" to match the existing server route.
+
+### Add User Shared Cloud Drive Permission
+
+Grants one or more users access to a shared cloud drive.
 
 - **URL**: `/api/v1/permission/users_sharedclouddrive_permision`
-- **Methods**: POST, PUT, DELETE
+- **Method**: POST
 - **Auth Required**: Yes
 
-### Request Body (POST, PUT)
+#### Request Body
+
+```json
+[
+  {
+    "userId": "string (uuid)",
+    "sharedCloudDriveId": "string (uuid)",
+    "permissionType": "integer (ResourcePermissionType)"
+  }
+]
+```
+
+#### Response
+
+`200 OK` with an empty body.
+
+
+### Edit User Shared Cloud Drive Permission
+
+Updates one or more existing user-to-shared-cloud-drive permission records.
+
+- **URL**: `/api/v1/permission/users_sharedclouddrive_permision`
+- **Method**: PUT
+- **Auth Required**: Yes
+
+#### Request Body
 
 ```json
 [
@@ -110,76 +237,133 @@ Apply, edit, or delete permissions of a user for a shared cloud drive.
     "id": "string (uuid)",
     "userId": "string (uuid)",
     "sharedCloudDriveId": "string (uuid)",
-    "permissionType": "integer (enum)"
+    "permissionType": "integer (ResourcePermissionType)"
   }
 ]
 ```
 
-### Query Parameters (DELETE)
+#### Response
+
+`200 OK` with an empty body.
+
+
+### Delete User Shared Cloud Drive Permission
+
+Removes a single user-to-shared-cloud-drive permission record by its id.
+
+- **URL**: `/api/v1/permission/users_sharedclouddrive_permision`
+- **Method**: DELETE
+- **Auth Required**: Yes
+
+#### Query Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| id | string (uuid) | ID of the permission to delete |
+| id | string (uuid) | Permission record id. |
 
-### Response
+#### Response
 
-A successful operation returns a `200 OK` status with no body.
+`200 OK` with an empty body.
 
-## Get Users Assigned to Shared Cloud Drive
 
-Retrieves the list of users assigned to a shared cloud drive.
+### Get Users Assigned To Shared Cloud Drive
+
+Returns the users granted access to the given shared cloud drive, paginated.
 
 - **URL**: `/api/v1/permission/get_users_assigned_to_sharedclouddrive`
 - **Method**: GET
 - **Auth Required**: Yes
 
-### Query Parameters
+#### Query Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| sharedCloudDriveId | string (uuid) | - | Shared cloud drive ID |
+| sharedCloudDriveId | string (uuid) | — | Target shared cloud drive id |
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "User.Username" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
-| username | string | - | Username to filter by |
+| descending | boolean | false | Sort direction |
+| username | string | null | Case-insensitive substring match on username |
 
-### Response
+#### Response
 
-Returns a collection of UserSharedCloudDrivePermissionDTO objects.
+Returns a `DTOCollection<UserSharedCloudDrivePermissionDTO>` where each row has the shape:
 
-## Get Shared Cloud Drives Assigned to User
+```json
+{
+  "user": { },
+  "sharedClouDrive": { },
+  "permission": {
+    "id": "string (uuid)",
+    "userId": "string (uuid)",
+    "sharedCloudDriveId": "string (uuid)",
+    "permissionType": "integer (ResourcePermissionType)"
+  }
+}
+```
 
-Retrieves the list of shared cloud drives assigned to a user.
+### Get Shared Cloud Drive Assigned To User
+
+Returns the shared cloud drives the given user has access to, paginated.
 
 - **URL**: `/api/v1/permission/get_sharedclouddrive_assigned_to_user`
 - **Method**: GET
 - **Auth Required**: Yes
 
-### Query Parameters
+#### Query Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| userId | string (uuid) | - | User ID |
+| userId | string (uuid) | — | Target user id |
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "SharedClouDrive.Name" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
-| name | string | - | Shared cloud drive name to filter by |
+| descending | boolean | false | Sort direction |
+| name | string | null | Case-insensitive substring match on shared cloud drive name |
 
-### Response
+#### Response
 
-Returns a collection of UserSharedCloudDrivePermissionDTO objects.
+Returns a `DTOCollection<UserSharedCloudDrivePermissionDTO>`.
 
-## User Groups Project Permission
 
-Apply, edit, or delete permissions of a user group for a project.
+---
+
+## User Group → Project
+
+### Add User Group Project Permission
+
+Grants one or more user groups access to a project. Every member of a granted group inherits the permission.
 
 - **URL**: `/api/v1/permission/usergroups_project_permission`
-- **Methods**: POST, PUT, DELETE
+- **Method**: POST
 - **Auth Required**: Yes
 
-### Request Body (POST, PUT)
+#### Request Body
+
+```json
+[
+  {
+    "userGroupId": "string (uuid)",
+    "projectId": "string (uuid)",
+    "permissionType": "integer (ResourcePermissionType)"
+  }
+]
+```
+
+#### Response
+
+`200 OK` with an empty body.
+
+
+### Edit User Group Project Permission
+
+Updates one or more existing user-group-to-project permission records.
+
+- **URL**: `/api/v1/permission/usergroups_project_permission`
+- **Method**: PUT
+- **Auth Required**: Yes
+
+#### Request Body
 
 ```json
 [
@@ -187,76 +371,134 @@ Apply, edit, or delete permissions of a user group for a project.
     "id": "string (uuid)",
     "userGroupId": "string (uuid)",
     "projectId": "string (uuid)",
-    "permissionType": "integer (enum)"
+    "permissionType": "integer (ResourcePermissionType)"
   }
 ]
 ```
 
-### Query Parameters (DELETE)
+#### Response
+
+`200 OK` with an empty body.
+
+
+### Delete User Group Project Permission
+
+Removes a single user-group-to-project permission record by its id.
+
+- **URL**: `/api/v1/permission/usergroups_project_permission`
+- **Method**: DELETE
+- **Auth Required**: Yes
+
+#### Query Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| id | string (uuid) | ID of the permission to delete |
+| id | string (uuid) | Permission record id. |
 
-### Response
+#### Response
 
-A successful operation returns a `200 OK` status with no body.
+`200 OK` with an empty body.
 
-## Get User Groups Assigned to Project
 
-Retrieves the list of user groups assigned to a project.
+### Get User Groups Assigned To Project
+
+Returns the user groups granted access to the given project, paginated.
 
 - **URL**: `/api/v1/permission/get_usergroups_assigned_to_project`
 - **Method**: GET
 - **Auth Required**: Yes
 
-### Query Parameters
+#### Query Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| projectId | string (uuid) | - | Project ID |
+| projectId | string (uuid) | — | Target project id |
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "UserGroup.Name" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
-| name | string | - | User group name to filter by |
+| descending | boolean | false | Sort direction |
+| name | string | null | Case-insensitive substring match on user group name |
 
-### Response
+#### Response
 
-Returns a collection of UserGroupProjectPermissionDTO objects.
+Returns a `DTOCollection<UserGroupProjectPermissionDTO>` where each row has the shape:
 
-## Get Projects Assigned to User Group
+```json
+{
+  "userGroup": { },
+  "project": { },
+  "permission": {
+    "id": "string (uuid)",
+    "userGroupId": "string (uuid)",
+    "projectId": "string (uuid)",
+    "permissionType": "integer (ResourcePermissionType)"
+  }
+}
+```
 
-Retrieves the list of projects assigned to a user group.
+
+### Get Projects Assigned To User Group
+
+Returns the projects the given user group has access to, paginated.
 
 - **URL**: `/api/v1/permission/get_projects_assigned_to_usergroup`
 - **Method**: GET
 - **Auth Required**: Yes
 
-### Query Parameters
+#### Query Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| userGroupId | string (uuid) | - | User group ID |
+| userGroupId | string (uuid) | — | Target user group id |
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "Project.Name" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
-| name | string | - | Project name to filter by |
+| descending | boolean | false | Sort direction |
+| name | string | null | Case-insensitive substring match on project name |
 
-### Response
+#### Response
 
-Returns a collection of UserGroupProjectPermissionDTO objects.
+Returns a `DTOCollection<UserGroupProjectPermissionDTO>`.
 
-## User Group Shared Cloud Drive Permission
 
-Apply, edit, or delete permissions of a user group for a shared cloud drive.
+---
+
+## User Group → Shared Cloud Drive
+
+### Add User Group Shared Cloud Drive Permission
+
+Grants one or more user groups access to a shared cloud drive.
 
 - **URL**: `/api/v1/permission/usergroup_sharedclouddrive_permission`
-- **Methods**: POST, PUT, DELETE
+- **Method**: POST
 - **Auth Required**: Yes
 
-### Request Body (POST, PUT)
+#### Request Body
+
+```json
+[
+  {
+    "userGroupId": "string (uuid)",
+    "sharedCloudDriveId": "string (uuid)",
+    "permissionType": "integer (ResourcePermissionType)"
+  }
+]
+```
+
+#### Response
+
+`200 OK` with an empty body.
+
+
+### Edit User Group Shared Cloud Drive Permission
+
+Updates one or more existing user-group-to-shared-cloud-drive permission records.
+
+- **URL**: `/api/v1/permission/usergroup_sharedclouddrive_permission`
+- **Method**: PUT
+- **Auth Required**: Yes
+
+#### Request Body
 
 ```json
 [
@@ -264,80 +506,99 @@ Apply, edit, or delete permissions of a user group for a shared cloud drive.
     "id": "string (uuid)",
     "userGroupId": "string (uuid)",
     "sharedCloudDriveId": "string (uuid)",
-    "permissionType": "integer (enum)"
+    "permissionType": "integer (ResourcePermissionType)"
   }
 ]
 ```
 
-### Query Parameters (DELETE)
+#### Response
+
+`200 OK` with an empty body.
+
+
+### Delete User Group Shared Cloud Drive Permission
+
+Removes a single user-group-to-shared-cloud-drive permission record by its id.
+
+- **URL**: `/api/v1/permission/usergroup_sharedclouddrive_permission`
+- **Method**: DELETE
+- **Auth Required**: Yes
+
+#### Query Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| id | string (uuid) | ID of the permission to delete |
+| id | string (uuid) | Permission record id. |
 
-### Response
+#### Response
 
-A successful operation returns a `200 OK` status with no body.
+`200 OK` with an empty body.
 
-## Get User Groups Assigned to Shared Cloud Drive
 
-Retrieves the list of user groups assigned to a shared cloud drive.
+### Get User Groups Assigned To Shared Cloud Drive
+
+Returns the user groups granted access to the given shared cloud drive, paginated.
 
 - **URL**: `/api/v1/permission/get_usergroups_assigned_to_sharedclouddrive`
 - **Method**: GET
 - **Auth Required**: Yes
 
-### Query Parameters
+#### Query Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| sharedCloudDrive | string (uuid) | - | Shared cloud drive ID |
+| sharedCloudDrive | string (uuid) | — | Target shared cloud drive id |
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "UserGroup.Name" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
-| name | string | - | User group name to filter by |
+| descending | boolean | false | Sort direction |
+| name | string | null | Case-insensitive substring match on user group name |
 
-### Response
+#### Response
 
-Returns a collection of UserGroupSharedCloudDrivePermissionDTO objects.
+Returns a `DTOCollection<UserGroupSharedCloudDrivePermissionDTO>` where each row has the shape:
 
-## Get Shared Cloud Drives Assigned to User Group
+```json
+{
+  "userGroup": { },
+  "sharedCloudDrive": { },
+  "permission": {
+    "id": "string (uuid)",
+    "userGroupId": "string (uuid)",
+    "sharedCloudDriveId": "string (uuid)",
+    "permissionType": "integer (ResourcePermissionType)"
+  }
+}
+```
 
-Retrieves the list of shared cloud drives assigned to a user group.
+
+### Get Shared Cloud Drive Assigned To User Group
+
+Returns the shared cloud drives the given user group has access to, paginated.
 
 - **URL**: `/api/v1/permission/get_sharedclouddrive_assigned_to_usergroup`
 - **Method**: GET
 - **Auth Required**: Yes
 
-### Query Parameters
+#### Query Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| userGroupId | string (uuid) | - | User group ID |
+| userGroupId | string (uuid) | — | Target user group id |
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "SharedCloudDrive.Name" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
-| name | string | - | Shared cloud drive name to filter by |
+| descending | boolean | false | Sort direction |
+| name | string | null | Case-insensitive substring match on shared cloud drive name |
 
-### Response
+#### Response
 
-Returns a collection of UserGroupSharedCloudDrivePermissionDTO objects.
+Returns a `DTOCollection<UserGroupSharedCloudDrivePermissionDTO>`.
 
-## Error Responses
-
-All endpoints may return the following error responses:
-
-- `400 Bad Request`: The request was invalid or cannot be served.
-- `401 Unauthorized`: The request requires authentication.
-- `403 Forbidden`: The server understood the request but refuses to authorize it.
-- `404 Not Found`: The requested resource could not be found.
-- `500 Internal Server Error`: The server encountered an unexpected condition that prevented it from fulfilling the request.
 
 ## Sample Code
 
-### Get Users Assigned to Project
+### Grant a user read-write access to a project
 
 <details>
 <summary>Python</summary>
@@ -345,27 +606,16 @@ All endpoints may return the following error responses:
 ```python
 import requests
 
-url = "https://api.amove.com/api/v1/permission/get_users_assigned_to_project"
-headers = {
-    "Authorization": "Bearer YOUR_TOKEN_HERE"
-}
-params = {
-    "projectId": "PROJECT_ID_HERE",
-    "page": 1,
-    "pagesize": 10,
-    "sortfield": "User.Username",
-    "descending": False
-}
-
-response = requests.get(url, headers=headers, params=params)
-
-if response.status_code == 200:
-    assigned_users = response.json()
-    for user in assigned_users['data']:
-        print(f"User: {user['user']['username']}, Permission: {user['permission']['permissionType']}")
-else:
-    print(f"Error: {response.status_code}")
-    print(response.text)
+response = requests.post(
+    "https://api.amove.io/api/v1/permission/users_project_permission",
+    headers={"Authorization": "Bearer EXAMPLE_TOKEN"},
+    json=[{
+        "userId": "00000000-0000-0000-0000-000000000000",
+        "projectId": "11111111-1111-1111-1111-111111111111",
+        "permissionType": 2
+    }]
+)
+print(response.status_code)
 ```
 
 </details>
@@ -374,26 +624,19 @@ else:
 <summary>JavaScript</summary>
 
 ```javascript
-fetch('https://api.amove.com/api/v1/permission/get_users_assigned_to_project?projectId=PROJECT_ID_HERE&page=1&pagesize=10&sortfield=User.Username&descending=false', {
-  method: 'GET',
+const res = await fetch("https://api.amove.io/api/v1/permission/users_project_permission", {
+  method: "POST",
   headers: {
-    'Authorization': 'Bearer YOUR_TOKEN_HERE'
-  }
-})
-.then(response => {
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-  return response.json();
-})
-.then(data => {
-  data.data.forEach(user => {
-    console.log(`User: ${user.user.username}, Permission: ${user.permission.permissionType}`);
-  });
-})
-.catch(error => {
-  console.error('Error:', error);
+    "Authorization": "Bearer EXAMPLE_TOKEN",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify([{
+    userId: "00000000-0000-0000-0000-000000000000",
+    projectId: "11111111-1111-1111-1111-111111111111",
+    permissionType: 2
+  }])
 });
+console.log(res.status);
 ```
 
 </details>
@@ -402,42 +645,74 @@ fetch('https://api.amove.com/api/v1/permission/get_users_assigned_to_project?pro
 <summary>C#</summary>
 
 ```csharp
-using System;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
+using System.Net.Http.Json;
 
-class Program
+using var client = new HttpClient();
+client.DefaultRequestHeaders.Authorization =
+    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "EXAMPLE_TOKEN");
+
+object[] body = new[]
 {
-    static async Task Main(string[] args)
+    new
     {
-        using (var client = new HttpClient())
-        {
-            client.BaseAddress = new Uri("https://api.amove.com/");
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "YOUR_TOKEN_HERE");
-
-            var response = await client.GetAsync("api/v1/permission/get_users_assigned_to_project?projectId=PROJECT_ID_HERE&page=1&pagesize=10&sortfield=User.Username&descending=false");
-
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                var assignedUsers = JObject.Parse(content);
-                foreach (var user in assignedUsers["data"])
-                {
-                    Console.WriteLine($"User: {user["user"]["username"]}, Permission: {user["permission"]["permissionType"]}");
-                }
-            }
-            else
-            {
-                Console.WriteLine($"Error: {response.StatusCode}");
-            }
-        }
+        userId = "00000000-0000-0000-0000-000000000000",
+        projectId = "11111111-1111-1111-1111-111111111111",
+        permissionType = 2
     }
-}
+};
+
+HttpResponseMessage res = await client.PostAsJsonAsync(
+    "https://api.amove.io/api/v1/permission/users_project_permission",
+    body);
+Console.WriteLine((int)res.StatusCode);
 ```
 
 </details>
 
-For more detailed examples and usage of other endpoints, please refer to our [Examples Directory](examples/README.md).
+### List the users assigned to a project
 
+<details>
+<summary>Python</summary>
+
+```python
+import requests
+
+response = requests.get(
+    "https://api.amove.io/api/v1/permission/get_users_assigned_to_project",
+    headers={"Authorization": "Bearer EXAMPLE_TOKEN"},
+    params={
+        "projectId": "11111111-1111-1111-1111-111111111111",
+        "page": 1,
+        "pagesize": 50
+    }
+)
+print(response.json())
+```
+
+</details>
+
+### Grant a user group access to a shared cloud drive
+
+<details>
+<summary>JavaScript</summary>
+
+```javascript
+const res = await fetch("https://api.amove.io/api/v1/permission/usergroup_sharedclouddrive_permission", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer EXAMPLE_TOKEN",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify([{
+    userGroupId: "22222222-2222-2222-2222-222222222222",
+    sharedCloudDriveId: "33333333-3333-3333-3333-333333333333",
+    permissionType: 1
+  }])
+});
+console.log(res.status);
+```
+
+</details>
+
+
+For error handling, see [Error Model](errors.md).

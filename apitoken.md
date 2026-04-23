@@ -1,6 +1,6 @@
-# ApiToken Endpoints
+# API Token Endpoints
 
-This document provides detailed information about the ApiToken-related endpoints in the AMove API. These endpoints allow you to manage API tokens for authentication and authorization purposes.
+This document provides detailed information about the API-token endpoints in the AMove API. API tokens are long-lived JWT tokens a user can mint against their own account for programmatic access without going through the interactive login flow.
 
 ## Endpoints
 
@@ -8,9 +8,10 @@ This document provides detailed information about the ApiToken-related endpoints
 2. [Insert API Token](#insert-api-token)
 3. [Delete API Token](#delete-api-token)
 
+
 ## Get All API Tokens
 
-Retrieves all API tokens associated with the current user's account.
+Returns every API token that belongs to the current user.
 
 - **URL**: `/api/v1/apitoken/get_all`
 - **Method**: GET
@@ -20,43 +21,35 @@ Retrieves all API tokens associated with the current user's account.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| page | integer | 1 | The page number for pagination |
-| pagesize | integer | 50 | The number of items per page |
-| sortfield | string | "CreateDate" | The field to sort the results by |
-| descending | boolean | true | Whether to sort in descending order |
+| page | integer | 1 | Starting page |
+| pagesize | integer | 50 | Page size |
+| sortfield | string | "CreateDate" | Field to sort by |
+| descending | boolean | true | Sort direction |
 
 ### Response
 
+Returns an array of `ApiToken` objects owned by the current user.
+
 ```json
-{
-  "data": [
-    {
-      "id": "string (uuid)",
-      "userId": "string (uuid)",
-      "sessionId": "string (uuid)",
-      "title": "string",
-      "token": "string",
-      "expirationDate": "string (date-time)",
-      "createDate": "string (date-time)"
-    }
-  ],
-  "total": "integer",
-  "options": {
-    "pageSize": "integer",
-    "page": "integer",
-    "sort": [
-      {
-        "field": "string",
-        "descending": "boolean"
-      }
-    ]
+[
+  {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "userId": "00000000-0000-0000-0000-000000000000",
+    "sessionId": "00000000-0000-0000-0000-000000000000",
+    "title": "ci-pipeline",
+    "token": "eyJhbGciOi...",
+    "encryptionKey": "",
+    "isEncrypted": false,
+    "expirationDate": "2027-01-01T00:00:00Z",
+    "createDate": "2026-01-01T00:00:00Z"
   }
-}
+]
 ```
+
 
 ## Insert API Token
 
-Creates a new API token for the current user.
+Creates a new API token for the current user. The server mints a JWT bound to the user's identity and tied to a new authenticator session whose timeout is derived from `expirationDate`. The returned `token` is the bearer value to use on subsequent calls to the Main API.
 
 - **URL**: `/api/v1/apitoken/insert`
 - **Method**: POST
@@ -67,27 +60,24 @@ Creates a new API token for the current user.
 ```json
 {
   "title": "string",
+  "isEncrypted": "boolean",
+  "encryptionKey": "string",
   "expirationDate": "string (date-time)"
 }
 ```
 
+- `title` — caller-supplied label for the token.
+- `isEncrypted` — when `true`, the issued JWT payload is encrypted; `encryptionKey` must also be set.
+- `expirationDate` — UTC date and time at which the token expires. The server derives the authenticator session and JWT timeouts from the interval between "now" and this value.
+
 ### Response
 
-```json
-{
-  "id": "string (uuid)",
-  "userId": "string (uuid)",
-  "sessionId": "string (uuid)",
-  "title": "string",
-  "token": "string",
-  "expirationDate": "string (date-time)",
-  "createDate": "string (date-time)"
-}
-```
+Returns the created `ApiToken` object, including the newly-issued `token` (JWT string) and server-generated `id`, `sessionId`, and `createDate`.
+
 
 ## Delete API Token
 
-Deletes an existing API token.
+Revokes an API token. The underlying authenticator session is killed and the token record is removed, so any client still holding the token receives `401 Unauthorized` on the next call.
 
 - **URL**: `/api/v1/apitoken/delete`
 - **Method**: DELETE
@@ -97,25 +87,16 @@ Deletes an existing API token.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| id | string (uuid) | The ID of the API token to delete |
+| id | string (uuid) | The `id` of the `ApiToken` to delete. Must belong to the current user; tokens owned by other users are rejected. |
 
 ### Response
 
-A successful deletion returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
 
-## Error Responses
-
-All endpoints may return the following error responses:
-
-- `400 Bad Request`: The request was invalid or cannot be served.
-- `401 Unauthorized`: The request requires authentication.
-- `403 Forbidden`: The server understood the request but refuses to authorize it.
-- `404 Not Found`: The requested resource could not be found.
-- `500 Internal Server Error`: The server encountered an unexpected condition that prevented it from fulfilling the request.
 
 ## Sample Code
 
-### Get All API Tokens
+### Create and use an API token
 
 <details>
 <summary>Python</summary>
@@ -123,24 +104,31 @@ All endpoints may return the following error responses:
 ```python
 import requests
 
-url = "https://api.amove.com/api/v1/apitoken/get_all"
-headers = {
-    "Authorization": "Bearer YOUR_TOKEN_HERE"
-}
-params = {
-    "page": 1,
-    "pagesize": 10
-}
+JWT = "YOUR_JWT"
+BASE = "https://api.amove.io"
 
-response = requests.get(url, headers=headers, params=params)
+# Create a long-lived API token (1 year)
+from datetime import datetime, timedelta, timezone
+expiration = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
 
-if response.status_code == 200:
-    api_tokens = response.json()
-    for token in api_tokens['data']:
-        print(f"Token Title: {token['title']}, Expiration: {token['expirationDate']}")
-else:
-    print(f"Error: {response.status_code}")
-    print(response.text)
+created = requests.post(
+    f"{BASE}/api/v1/apitoken/insert",
+    headers={"Authorization": f"Bearer {JWT}"},
+    json={
+        "title": "ci-pipeline",
+        "isEncrypted": False,
+        "expirationDate": expiration,
+    },
+).json()
+
+api_token = created["token"]
+
+# Use the API token as a bearer on subsequent calls
+profile = requests.get(
+    f"{BASE}/api/v1/user/userinfo",
+    headers={"Authorization": f"Bearer {api_token}"},
+).json()
+print(profile)
 ```
 
 </details>
@@ -149,26 +137,30 @@ else:
 <summary>JavaScript</summary>
 
 ```javascript
-fetch('https://api.amove.com/api/v1/apitoken/get_all?page=1&pagesize=10', {
-  method: 'GET',
+const JWT = "YOUR_JWT";
+const BASE = "https://api.amove.io";
+
+const expiration = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+
+const created = await fetch(`${BASE}/api/v1/apitoken/insert`, {
+  method: "POST",
   headers: {
-    'Authorization': 'Bearer YOUR_TOKEN_HERE'
-  }
-})
-.then(response => {
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-  return response.json();
-})
-.then(data => {
-  data.data.forEach(token => {
-    console.log(`Token Title: ${token.title}, Expiration: ${token.expirationDate}`);
-  });
-})
-.catch(error => {
-  console.error('Error:', error);
-});
+    "Authorization": `Bearer ${JWT}`,
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    title: "ci-pipeline",
+    isEncrypted: false,
+    expirationDate: expiration
+  })
+}).then(r => r.json());
+
+const apiToken = created.token;
+
+const profile = await fetch(`${BASE}/api/v1/user/userinfo`, {
+  headers: { "Authorization": `Bearer ${apiToken}` }
+}).then(r => r.json());
+console.log(profile);
 ```
 
 </details>
@@ -177,42 +169,46 @@ fetch('https://api.amove.com/api/v1/apitoken/get_all?page=1&pagesize=10', {
 <summary>C#</summary>
 
 ```csharp
-using System;
 using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
+using System.Net.Http.Json;
+using System.Text.Json;
 
-class Program
+using var client = new HttpClient { BaseAddress = new Uri("https://api.amove.io/") };
+client.DefaultRequestHeaders.Authorization =
+    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "YOUR_JWT");
+
+var body = new
 {
-    static async Task Main(string[] args)
-    {
-        using (var client = new HttpClient())
-        {
-            client.BaseAddress = new Uri("https://api.amove.com/");
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "YOUR_TOKEN_HERE");
+    title = "ci-pipeline",
+    isEncrypted = false,
+    expirationDate = DateTime.UtcNow.AddDays(365)
+};
 
-            var response = await client.GetAsync("api/v1/apitoken/get_all?page=1&pagesize=10");
+var created = await (await client.PostAsJsonAsync("api/v1/apitoken/insert", body))
+    .Content.ReadFromJsonAsync<JsonElement>();
+string apiToken = created.GetProperty("token").GetString();
 
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                var tokens = JObject.Parse(content);
-                foreach (var token in tokens["data"])
-                {
-                    Console.WriteLine($"Token Title: {token["title"]}, Expiration: {token["expirationDate"]}");
-                }
-            }
-            else
-            {
-                Console.WriteLine($"Error: {response.StatusCode}");
-            }
-        }
-    }
-}
+Console.WriteLine(apiToken);
 ```
 
 </details>
 
-For more detailed examples and usage of other endpoints, please refer to our [Examples Directory](examples/README.md).
+### Delete an API token
 
+<details>
+<summary>Python</summary>
+
+```python
+import requests
+
+requests.delete(
+    "https://api.amove.io/api/v1/apitoken/delete",
+    params={"id": "00000000-0000-0000-0000-000000000000"},
+    headers={"Authorization": "Bearer YOUR_JWT"},
+)
+```
+
+</details>
+
+
+For error handling, see [Error Model](errors.md).

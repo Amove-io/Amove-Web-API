@@ -1,30 +1,71 @@
-# SSO (Single Sign-On) Endpoints
+# SSO Endpoints
 
-This document provides detailed information about the SSO-related endpoints in the AMove API. These endpoints allow you to manage and interact with various Single Sign-On providers.
+This document provides detailed information about the single-sign-on (SSO) endpoints in the AMove API. AMove supports three external identity providers per account:
+
+- **Okta** — OIDC authorization-code flow
+- **Entra ID** (formerly Azure AD) — OIDC authorization-code flow
+- **SAML** — HTTP-POST SAML 2.0 via an ACS endpoint
+
+A few endpoints on this controller are part of the login flow and are anonymous (`Auth Required: No`):
+
+- [Get SSO URL](#get-sso-url) — build the identity-provider redirect URL given a username
+- [Authenticate](#authenticate) — exchange an authorization code for an AMove JWT
+- [SAML ACS](#saml-acs) — the SAML Assertion Consumer Service callback
+
+The remaining endpoints are authenticated and are used by an account administrator to configure, update, and delete the SSO provider for the account.
 
 ## Endpoints
 
+### Login Flow (Anonymous)
+
 1. [Get SSO URL](#get-sso-url)
 2. [Authenticate](#authenticate)
-3. [SSO URL Import User](#sso-url-import-user)
-4. [Get User User Groups](#get-user-user-groups)
-5. [Setup Okta SSO](#setup-okta-sso)
-6. [Get Okta SSO](#get-okta-sso)
-7. [Update Okta SSO](#update-okta-sso)
-8. [Delete Okta SSO](#delete-okta-sso)
-9. [SAML ACS](#saml-acs)
-10. [Setup SAML SSO](#setup-saml-sso)
-11. [Get SAML SSO](#get-saml-sso)
-12. [Update SAML SSO](#update-saml-sso)
-13. [Delete SAML SSO](#delete-saml-sso)
-14. [Setup Azure AD SSO](#setup-azure-ad-sso)
-15. [Get Azure AD SSO](#get-azure-ad-sso)
-16. [Update Azure AD SSO](#update-azure-ad-sso)
-17. [Delete Azure AD SSO](#delete-azure-ad-sso)
+3. [SAML ACS](#saml-acs)
+
+### Import Users
+
+4. [Get SSO URL For Import User](#get-sso-url-for-import-user)
+5. [Get User User Groups](#get-user-user-groups)
+
+### Okta Configuration
+
+6. [Setup Okta](#setup-okta)
+7. [Get Okta](#get-okta)
+8. [Update Okta](#update-okta)
+9. [Delete Okta](#delete-okta)
+
+### SAML Configuration
+
+10. [Setup SAML](#setup-saml)
+11. [Get SAML](#get-saml)
+12. [Update SAML](#update-saml)
+13. [Delete SAML](#delete-saml)
+
+### Entra ID Configuration
+
+14. [Setup Entra ID](#setup-entra-id)
+15. [Get Entra ID](#get-entra-id)
+16. [Update Entra ID](#update-entra-id)
+17. [Delete Entra ID](#delete-entra-id)
+
+
+## AuthProvider Values
+
+Several endpoints in this controller return or key off the `AuthProvider` enum:
+
+| Value | Name |
+|---|---|
+| 0 | AWSCognito |
+| 1 | Google |
+| 2 | EntraID |
+| 4 | Okta |
+| 8 | Saml |
+| 16 | External |
+
 
 ## Get SSO URL
 
-Retrieves the SSO URL for authentication.
+Given a username, resolves the account's configured SSO provider and returns a provider-specific authorization URL. The client redirects the user's browser to this URL to start the external login.
 
 - **URL**: `/api/v1/sso/sso_url`
 - **Method**: POST
@@ -34,23 +75,29 @@ Retrieves the SSO URL for authentication.
 
 ```json
 {
-  "callbackUrl": "string",
-  "username": "string"
+  "username": "string",
+  "callbackUrl": "string"
 }
 ```
+
+- `username` — the AMove username (email) of the user attempting to log in. Used to look up which account they belong to and therefore which SSO config to apply.
+- `callbackUrl` — the URL of your application that the identity provider will redirect the user to after authentication.
 
 ### Response
 
 ```json
 {
   "url": "string",
-  "provider": "integer (enum)"
+  "provider": "integer (AuthProvider)"
 }
 ```
 
+The `provider` field indicates which flow was selected — `4` (Okta), `8` (SAML), or `2` (EntraID). For Okta and Entra ID, the client receives an authorization code on the callback URL to exchange via [Authenticate](#authenticate). For SAML, the identity provider posts a response directly to [SAML ACS](#saml-acs).
+
+
 ## Authenticate
 
-Authenticates a user using the SSO Authorization Code.
+Exchanges an OIDC authorization code for an AMove JWT. Used for Okta and Entra ID flows (SAML users authenticate via [SAML ACS](#saml-acs) and do not call this endpoint).
 
 - **URL**: `/api/v1/sso/authenticate`
 - **Method**: POST
@@ -60,19 +107,49 @@ Authenticates a user using the SSO Authorization Code.
 
 ```json
 {
-  "identifier": "string",
+  "identifier": "string (uuid)",
   "authorizationCode": "string",
   "callbackUrl": "string"
 }
 ```
 
+- `identifier` — the AMove user id for the user whose authentication is being completed.
+- `authorizationCode` — the OIDC `code` returned by the identity provider to your callback URL.
+- `callbackUrl` — the same callback URL supplied to [Get SSO URL](#get-sso-url) (used for OIDC redirect-URI verification at the IdP).
+
 ### Response
 
-Returns a string (likely an authentication token).
+A plain string containing the AMove JWT to be presented as `Authorization: Bearer <jwt>` on subsequent calls.
 
-## SSO URL Import User
+```
+"EXAMPLE_JWT_VALUE"
+```
 
-Imports a user using SSO URL.
+
+## SAML ACS
+
+SAML Assertion Consumer Service endpoint. The identity provider POSTs the SAML response here; the server validates the assertion against the stored X.509 certificate, issues an AMove JWT, and redirects the user's browser back to the client application's callback URL with the JWT as a query-string parameter.
+
+- **URL**: `/api/v1/sso/saml_acs`
+- **Method**: POST
+- **Auth Required**: No
+- **Content-Type**: `application/x-www-form-urlencoded`
+
+### Request Body (Form)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| SAMLResponse | string | Base64-encoded SAML response from the identity provider. |
+| RelayState | string | Base64-encoded JSON with `AccountID`, `Username`, and `CallbackUrl`. |
+
+### Response
+
+A `302 Found` redirect to `{callbackUrl}?jwt=<JWT>`. The client application parses the JWT out of the query string and uses it as the bearer token. If the SAML response fails signature validation or the account is not recognized, the server returns `400 Bad Request`.
+
+
+## Get SSO URL For Import User
+
+Generates an Okta authorization URL scoped for importing users and user groups from the identity provider into the account. This is the administrator-facing counterpart to [Get SSO URL](#get-sso-url).
 
 - **URL**: `/api/v1/sso/sso_url_import_user`
 - **Method**: POST
@@ -87,18 +164,21 @@ Imports a user using SSO URL.
 }
 ```
 
+`username` is ignored by this endpoint — the currently authenticated user is used instead. `callbackUrl` is the application URL the identity provider will redirect to.
+
 ### Response
 
 ```json
 {
   "url": "string",
-  "provider": "integer (enum)"
+  "provider": 4
 }
 ```
 
+
 ## Get User User Groups
 
-Retrieves user groups for a user.
+Returns the users and user groups available for import from the account's configured identity provider (Okta or Entra ID). This is called after the administrator completes the Okta/Entra ID flow initiated by [Get SSO URL For Import User](#get-sso-url-for-import-user); for Entra ID, no authorization code is required (Graph API is queried using the configured app credentials).
 
 - **URL**: `/api/v1/sso/get_user_usergroups`
 - **Method**: GET
@@ -108,8 +188,8 @@ Retrieves user groups for a user.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| authorizationCode | string | The authorization code |
-| callbackUrl | string | The callback URL |
+| authorizationCode | string | OIDC authorization code from the import-user flow (Okta only). |
+| callbackUrl | string | The same callback URL used when requesting the import URL (Okta only). |
 
 ### Response
 
@@ -117,18 +197,23 @@ Retrieves user groups for a user.
 [
   {
     "user": {
-      // User object
+      "id": "string (uuid)",
+      "username": "string",
+      "email": "string",
+      "firstname": "string",
+      "lastname": "string"
     },
     "userGroups": [
-      // UserGroup objects
+      { "id": "string (uuid)", "name": "string" }
     ]
   }
 ]
 ```
 
-## Setup Okta SSO
 
-Sets up Okta SSO configuration.
+## Setup Okta
+
+Stores the Okta SSO configuration for the authenticated user's account. The account id on the request body is always overridden server-side with the caller's account.
 
 - **URL**: `/api/v1/sso/setup_okta`
 - **Method**: POST
@@ -138,8 +223,6 @@ Sets up Okta SSO configuration.
 
 ```json
 {
-  "id": "string (uuid)",
-  "accountId": "string (uuid)",
   "clientId": "string",
   "clientSecret": "string",
   "openIdURL": "string",
@@ -149,29 +232,18 @@ Sets up Okta SSO configuration.
 
 ### Response
 
-Returns the created Okta SSO configuration object.
+Returns the stored `OktaSSO` record.
 
-## Get Okta SSO
 
-Retrieves the Okta SSO configuration.
+## Get Okta
+
+Returns the Okta SSO configuration for the authenticated user's account, if any.
 
 - **URL**: `/api/v1/sso/get_okta`
 - **Method**: GET
 - **Auth Required**: Yes
 
 ### Response
-
-Returns the Okta SSO configuration object.
-
-## Update Okta SSO
-
-Updates the Okta SSO configuration.
-
-- **URL**: `/api/v1/sso/update_okta`
-- **Method**: PUT
-- **Auth Required**: Yes
-
-### Request Body
 
 ```json
 {
@@ -184,13 +256,27 @@ Updates the Okta SSO configuration.
 }
 ```
 
+
+## Update Okta
+
+Updates the Okta SSO configuration for the authenticated user's account.
+
+- **URL**: `/api/v1/sso/update_okta`
+- **Method**: PUT
+- **Auth Required**: Yes
+
+### Request Body
+
+Same schema as [Setup Okta](#setup-okta), including the record `id`.
+
 ### Response
 
-Returns the updated Okta SSO configuration object.
+Returns the updated `OktaSSO` record.
 
-## Delete Okta SSO
 
-Deletes the Okta SSO configuration.
+## Delete Okta
+
+Deletes the Okta SSO configuration for the authenticated user's account.
 
 - **URL**: `/api/v1/sso/delete_okta`
 - **Method**: DELETE
@@ -198,23 +284,12 @@ Deletes the Okta SSO configuration.
 
 ### Response
 
-A successful deletion returns a `200 OK` status with no body.
+`200 OK` with an empty body.
 
-## SAML ACS
 
-SAML SSO Assertion handler. It will redirect to the Frontend callback URL.
+## Setup SAML
 
-- **URL**: `/api/v1/sso/saml_acs`
-- **Method**: POST
-- **Auth Required**: No
-
-### Response
-
-Redirects to the frontend callback URL.
-
-## Setup SAML SSO
-
-Sets up SAML SSO configuration.
+Stores the SAML SSO configuration for the authenticated user's account. The account id on the request body is always overridden server-side with the caller's account.
 
 - **URL**: `/api/v1/sso/setup_saml`
 - **Method**: POST
@@ -224,8 +299,6 @@ Sets up SAML SSO configuration.
 
 ```json
 {
-  "id": "string (uuid)",
-  "accountId": "string (uuid)",
   "certificate": "string",
   "spEntityId": "string",
   "idPSSOURL": "string",
@@ -233,31 +306,24 @@ Sets up SAML SSO configuration.
 }
 ```
 
+- `certificate` — the identity provider's X.509 certificate (PEM text).
+- `spEntityId` — the AMove service-provider entity id configured at the IdP.
+- `idPSSOURL` — the identity provider's SSO endpoint URL.
+
 ### Response
 
-Returns the created SAML SSO configuration object.
+Returns the stored `SamlSSO` record.
 
-## Get SAML SSO
 
-Retrieves the SAML SSO configuration.
+## Get SAML
+
+Returns the SAML SSO configuration for the authenticated user's account, if any.
 
 - **URL**: `/api/v1/sso/get_saml`
 - **Method**: GET
 - **Auth Required**: Yes
 
 ### Response
-
-Returns the SAML SSO configuration object.
-
-## Update SAML SSO
-
-Updates the SAML SSO configuration.
-
-- **URL**: `/api/v1/sso/update_saml`
-- **Method**: PUT
-- **Auth Required**: Yes
-
-### Request Body
 
 ```json
 {
@@ -270,13 +336,27 @@ Updates the SAML SSO configuration.
 }
 ```
 
+
+## Update SAML
+
+Updates the SAML SSO configuration for the authenticated user's account.
+
+- **URL**: `/api/v1/sso/update_saml`
+- **Method**: PUT
+- **Auth Required**: Yes
+
+### Request Body
+
+Same schema as [Setup SAML](#setup-saml), including the record `id`.
+
 ### Response
 
-Returns the updated SAML SSO configuration object.
+Returns the updated `SamlSSO` record.
 
-## Delete SAML SSO
 
-Deletes the SAML SSO configuration.
+## Delete SAML
+
+Deletes the SAML SSO configuration for the authenticated user's account.
 
 - **URL**: `/api/v1/sso/delete_saml`
 - **Method**: DELETE
@@ -284,11 +364,12 @@ Deletes the SAML SSO configuration.
 
 ### Response
 
-A successful deletion returns a `200 OK` status with no body.
+`200 OK` with an empty body.
 
-## Setup Azure AD SSO
 
-Sets up Azure AD SSO configuration.
+## Setup Entra ID
+
+Stores the Entra ID (Azure AD) SSO configuration for the authenticated user's account.
 
 - **URL**: `/api/v1/sso/setup_entraId`
 - **Method**: POST
@@ -298,8 +379,6 @@ Sets up Azure AD SSO configuration.
 
 ```json
 {
-  "id": "string (uuid)",
-  "accountId": "string (uuid)",
   "clientId": "string",
   "clientSecret": "string",
   "openIdURL": "string",
@@ -309,29 +388,18 @@ Sets up Azure AD SSO configuration.
 
 ### Response
 
-Returns the created Azure AD SSO configuration object.
+Returns the stored `EntraIDSSO` record.
 
-## Get Azure AD SSO
 
-Retrieves the Azure AD SSO configuration.
+## Get Entra ID
+
+Returns the Entra ID SSO configuration for the authenticated user's account, if any.
 
 - **URL**: `/api/v1/sso/get_entraId`
 - **Method**: GET
 - **Auth Required**: Yes
 
 ### Response
-
-Returns the Azure AD SSO configuration object.
-
-## Update Azure AD SSO
-
-Updates the Azure AD SSO configuration.
-
-- **URL**: `/api/v1/sso/update_entraId`
-- **Method**: PUT
-- **Auth Required**: Yes
-
-### Request Body
 
 ```json
 {
@@ -344,13 +412,27 @@ Updates the Azure AD SSO configuration.
 }
 ```
 
+
+## Update Entra ID
+
+Updates the Entra ID SSO configuration for the authenticated user's account.
+
+- **URL**: `/api/v1/sso/update_entraId`
+- **Method**: PUT
+- **Auth Required**: Yes
+
+### Request Body
+
+Same schema as [Setup Entra ID](#setup-entra-id), including the record `id`.
+
 ### Response
 
-Returns the updated Azure AD SSO configuration object.
+Returns the updated `EntraIDSSO` record.
 
-## Delete Azure AD SSO
 
-Deletes the Azure AD SSO configuration.
+## Delete Entra ID
+
+Deletes the Entra ID SSO configuration for the authenticated user's account.
 
 - **URL**: `/api/v1/sso/delete_entraId`
 - **Method**: DELETE
@@ -358,47 +440,28 @@ Deletes the Azure AD SSO configuration.
 
 ### Response
 
-A successful deletion returns a `200 OK` status with no body.
+`200 OK` with an empty body.
 
-## Error Responses
-
-All endpoints may return the following error responses:
-
-- `400 Bad Request`: The request was invalid or cannot be served.
-- `401 Unauthorized`: The request requires authentication.
-- `403 Forbidden`: The server understood the request but refuses to authorize it.
-- `404 Not Found`: The requested resource could not be found.
-- `500 Internal Server Error`: The server encountered an unexpected condition that prevented it from fulfilling the request.
 
 ## Sample Code
 
-### Get SSO URL
+### Start an SSO login
 
 <details>
 <summary>Python</summary>
 
 ```python
 import requests
-import json
 
-url = "https://api.amove.com/api/v1/sso/sso_url"
-headers = {
-    "Content-Type": "application/json"
-}
-data = {
-    "callbackUrl": "https://your-app.com/callback",
-    "username": "user@example.com"
-}
-
-response = requests.post(url, headers=headers, data=json.dumps(data))
-
-if response.status_code == 200:
-    sso_data = response.json()
-    print(f"SSO URL: {sso_data['url']}")
-    print(f"Provider: {sso_data['provider']}")
-else:
-    print(f"Error: {response.status_code}")
-    print(response.text)
+response = requests.post(
+    "https://api.amove.io/api/v1/sso/sso_url",
+    json={
+        "username": "user@example.com",
+        "callbackUrl": "https://app.example.com/sso/callback"
+    }
+)
+data = response.json()
+print("Redirect the browser to:", data["url"])
 ```
 
 </details>
@@ -407,79 +470,69 @@ else:
 <summary>JavaScript</summary>
 
 ```javascript
-const data = {
-  callbackUrl: 'https://your-app.com/callback',
-  username: 'user@example.com'
-};
-
-fetch('https://api.amove.com/api/v1/sso/sso_url', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify(data)
-})
-.then(response => {
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-  return response.json();
-})
-.then(ssoData => {
-  console.log(`SSO URL: ${ssoData.url}`);
-  console.log(`Provider: ${ssoData.provider}`);
-})
-.catch(error => {
-  console.error('Error:', error);
+const res = await fetch("https://api.amove.io/api/v1/sso/sso_url", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    username: "user@example.com",
+    callbackUrl: "https://app.example.com/sso/callback"
+  })
 });
+const { url, provider } = await res.json();
+window.location = url;
 ```
 
 </details>
+
+### Complete the OIDC callback (Okta or Entra ID)
+
+<details>
+<summary>Python</summary>
+
+```python
+import requests
+
+response = requests.post(
+    "https://api.amove.io/api/v1/sso/authenticate",
+    json={
+        "identifier": "00000000-0000-0000-0000-000000000000",
+        "authorizationCode": "EXAMPLE_AUTH_CODE",
+        "callbackUrl": "https://app.example.com/sso/callback"
+    }
+)
+jwt = response.json()
+print("JWT:", jwt)
+```
+
+</details>
+
+### Configure Okta for the current account
 
 <details>
 <summary>C#</summary>
 
 ```csharp
-using System;
-using System.Net.Http;
-using System.Text;
-using System.Threading.Tasks;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+using System.Net.Http.Json;
 
-class Program
+using var client = new HttpClient();
+client.DefaultRequestHeaders.Authorization =
+    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "EXAMPLE_TOKEN");
+
+object body = new
 {
-    static async Task Main(string[] args)
-    {
-        using (var client = new HttpClient())
-        {
-            var data = new
-            {
-                callbackUrl = "https://your-app.com/callback",
-                username = "user@example.com"
-            };
+    clientId = "YOUR_OKTA_CLIENT_ID",
+    clientSecret = "YOUR_OKTA_CLIENT_SECRET",
+    openIdURL = "https://your-org.okta.com/oauth2/default",
+    active = true
+};
 
-            var content = new StringContent(JsonConvert.SerializeObject(data), Encoding.UTF8, "application/json");
-            var response = await client.PostAsync("https://api.amove.com/api/v1/sso/sso_url", content);
-
-            if (response.IsSuccessStatusCode)
-            {
-                var responseContent = await response.Content.ReadAsStringAsync();
-                var ssoData = JObject.Parse(responseContent);
-                Console.WriteLine($"SSO URL: {ssoData["url"]}");
-                Console.WriteLine($"Provider: {ssoData["provider"]}");
-            }
-            else
-            {
-                Console.WriteLine($"Error: {response.StatusCode}");
-                Console.WriteLine(await response.Content.ReadAsStringAsync());
-            }
-        }
-    }
-}
+HttpResponseMessage res = await client.PostAsJsonAsync(
+    "https://api.amove.io/api/v1/sso/setup_okta",
+    body);
+Console.WriteLine(await res.Content.ReadAsStringAsync());
 ```
 
 </details>
 
-For more detailed examples and usage of other endpoints, please refer to our [Examples Directory](examples/README.md).
 
+For error handling, see [Error Model](errors.md).

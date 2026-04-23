@@ -1,18 +1,20 @@
-# SharedCloudDrive Endpoints
+# Shared Cloud Drive Endpoints
 
-This document provides detailed information about the SharedCloudDrive-related endpoints in the AMove API. These endpoints allow you to manage shared cloud drives within the system.
+This document provides detailed information about the shared-cloud-drive endpoints in the AMove API. A shared cloud drive links an account and a backing `CloudAccount`/bucket so multiple users can mount it as a virtual drive or local path.
 
 ## Endpoints
 
 1. [Get All Shared Cloud Drives](#get-all-shared-cloud-drives)
-2. [Insert Shared Cloud Drive](#insert-shared-cloud-drive)
-3. [Update Shared Cloud Drive](#update-shared-cloud-drive)
-4. [Delete Shared Cloud Drive](#delete-shared-cloud-drive)
-5. [Get Shared Cloud Drive](#get-shared-cloud-drive)
+2. [Get All Shared Cloud Drives With Details](#get-all-shared-cloud-drives-with-details)
+3. [Insert Shared Cloud Drive](#insert-shared-cloud-drive)
+4. [Update Shared Cloud Drive](#update-shared-cloud-drive)
+5. [Delete Shared Cloud Drive](#delete-shared-cloud-drive)
+6. [Get Shared Cloud Drives For Current User](#get-shared-cloud-drives-for-current-user)
+
 
 ## Get All Shared Cloud Drives
 
-Retrieves the list of shared cloud drives defined in the system.
+Returns a paginated list of shared cloud drives in the current user's account. Each row includes its backing `CloudAccount`, with access credentials obfuscated (masked) before return.
 
 - **URL**: `/api/v1/sharedclouddrive/get_all`
 - **Method**: GET
@@ -25,55 +27,90 @@ Retrieves the list of shared cloud drives defined in the system.
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "Name" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
-| deleted | boolean | false | When true, return deleted records in the result |
-| name | string | - | Shared cloud drive name to filter by |
+| descending | boolean | false | Sort direction |
+| deleted | boolean | false | When `true`, return soft-deleted drives instead of active ones |
+| name | string | null | Optional case-insensitive substring filter on drive name |
 
 ### Response
+
+Returns a `DTOCollection<SharedCloudDrive>`:
 
 ```json
 {
   "data": [
     {
-      "id": "string (uuid)",
-      "accountId": "string (uuid)",
-      "creatorUserId": "string (uuid)",
-      "cloudAccountId": "string (uuid)",
-      "active": "boolean",
-      "name": "string",
-      "prefix": "string",
-      "prefixId": "string",
-      "storageId": "string",
-      "storageName": "string",
-      "objectsPerFolder": "integer",
-      "allowDelete": "boolean",
-      "localCacheEncrypted": "boolean",
-      "cloudObjectsEncrypted": "boolean",
-      "driveType": "integer (enum)",
-      "syncType": "integer (enum)",
-      "deleted": "boolean",
-      "cloudAccount": {
-        // CloudAccount object
-      }
+      "id": "00000000-0000-0000-0000-000000000000",
+      "accountId": "00000000-0000-0000-0000-000000000000",
+      "creatorUserId": "00000000-0000-0000-0000-000000000000",
+      "cloudAccountId": "00000000-0000-0000-0000-000000000000",
+      "active": true,
+      "name": "team-drive",
+      "prefix": "team/",
+      "prefixId": "",
+      "storageId": "",
+      "storageName": "team-bucket",
+      "objectsPerFolder": 10000,
+      "allowDelete": false,
+      "localCacheEncrypted": false,
+      "cloudObjectsEncrypted": false,
+      "driveType": 1,
+      "syncType": 2,
+      "deleted": false,
+      "cloudAccount": { }
     }
   ],
-  "total": "integer",
-  "options": {
-    "pageSize": "integer",
-    "page": "integer",
-    "sort": [
-      {
-        "field": "string",
-        "descending": "boolean"
-      }
-    ]
-  }
+  "total": 1
 }
 ```
 
+`driveType` values: `1 = VirtualDrive`, `2 = LocalPath`.
+`syncType` values: `1 = Stream`, `2 = Mirror`.
+
+
+## Get All Shared Cloud Drives With Details
+
+Same filters and paging as [Get All Shared Cloud Drives](#get-all-shared-cloud-drives), but each drive is returned with its assigned projects, users, and user groups inline — avoiding the per-drive follow-up calls otherwise needed to resolve these relationships. `CloudAccount` credentials are still obfuscated on return.
+
+- **URL**: `/api/v1/sharedclouddrive/get_all_with_details`
+- **Method**: GET
+- **Auth Required**: Yes
+
+### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| page | integer | 1 | Starting page |
+| pagesize | integer | 50 | Page size |
+| sortfield | string | "Name" | Field to sort by |
+| descending | boolean | false | Sort direction |
+| deleted | boolean | false | When `true`, return soft-deleted drives |
+| name | string | null | Optional case-insensitive substring filter on drive name |
+
+### Response
+
+Returns a `DTOCollection<SharedCloudDriveWithDetailsDTO>`. Each item contains the base drive fields plus three collections:
+
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "name": "team-drive",
+  "cloudAccount": { },
+  "projectsData": [
+    { "project": { }, "projectSharedCloudDrive": { } }
+  ],
+  "usersData": [
+    { "user": { }, "permission": { } }
+  ],
+  "groupsData": [
+    { "userGroup": { }, "permission": { } }
+  ]
+}
+```
+
+
 ## Insert Shared Cloud Drive
 
-Insert a new shared cloud drive.
+Creates a new shared cloud drive. The server overrides `accountId` and `creatorUserId` on the request body with the caller's values.
 
 - **URL**: `/api/v1/sharedclouddrive/insert`
 - **Method**: POST
@@ -83,31 +120,36 @@ Insert a new shared cloud drive.
 
 ```json
 {
-  "accountId": "string (uuid)",
-  "creatorUserId": "string (uuid)",
-  "cloudAccountId": "string (uuid)",
-  "active": "boolean",
-  "name": "string",
+  "cloudAccountId": "00000000-0000-0000-0000-000000000000",
+  "active": true,
+  "name": "string (max 50)",
   "prefix": "string",
   "prefixId": "string",
   "storageId": "string",
   "storageName": "string",
-  "objectsPerFolder": "integer",
-  "allowDelete": "boolean",
-  "localCacheEncrypted": "boolean",
-  "cloudObjectsEncrypted": "boolean",
-  "driveType": "integer (enum)",
-  "syncType": "integer (enum)"
+  "objectsPerFolder": 10000,
+  "allowDelete": false,
+  "localCacheEncrypted": false,
+  "cloudObjectsEncrypted": false,
+  "driveType": 1,
+  "syncType": 2
 }
 ```
 
+- `driveType` — `1` VirtualDrive, `2` LocalPath.
+- `syncType` — `1` Stream (cloud-only with explicit offline selection), `2` Mirror (cloud + full local copy).
+- `storageName` — the bucket name in the backing cloud.
+- `prefix` — optional folder prefix within the bucket.
+- `allowDelete` — when `true`, local deletions propagate to the cloud.
+
 ### Response
 
-Returns the created shared cloud drive object.
+Returns the newly-created `SharedCloudDrive` object.
+
 
 ## Update Shared Cloud Drive
 
-Update an existing shared cloud drive.
+Updates an existing shared cloud drive. `accountId` and `creatorUserId` are always reset to the caller's values.
 
 - **URL**: `/api/v1/sharedclouddrive/update`
 - **Method**: PUT
@@ -115,35 +157,16 @@ Update an existing shared cloud drive.
 
 ### Request Body
 
-```json
-{
-  "id": "string (uuid)",
-  "accountId": "string (uuid)",
-  "creatorUserId": "string (uuid)",
-  "cloudAccountId": "string (uuid)",
-  "active": "boolean",
-  "name": "string",
-  "prefix": "string",
-  "prefixId": "string",
-  "storageId": "string",
-  "storageName": "string",
-  "objectsPerFolder": "integer",
-  "allowDelete": "boolean",
-  "localCacheEncrypted": "boolean",
-  "cloudObjectsEncrypted": "boolean",
-  "driveType": "integer (enum)",
-  "syncType": "integer (enum)",
-  "deleted": "boolean"
-}
-```
+A full `SharedCloudDrive` object including the `id` of the record to update.
 
 ### Response
 
-Returns the updated shared cloud drive object.
+Returns the updated `SharedCloudDrive`.
+
 
 ## Delete Shared Cloud Drive
 
-Delete an existing shared cloud drive.
+Soft-deletes a shared cloud drive and cascades cleanup of its related permissions and project attachments: every `UserSharedCloudDrivePermission`, `UserGroupSharedCloudDrivePermission`, and `ProjectSharedCloudDrive` referencing this drive is deleted before the drive itself is soft-deleted.
 
 - **URL**: `/api/v1/sharedclouddrive/delete`
 - **Method**: DELETE
@@ -153,15 +176,16 @@ Delete an existing shared cloud drive.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| id | string (uuid) | Id of shared cloud drive to delete |
+| id | string (uuid) | Id of the shared cloud drive to delete |
 
 ### Response
 
-A successful deletion returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
 
-## Get Shared Cloud Drive
 
-Retrieves the shared cloud drive permissions for the current user.
+## Get Shared Cloud Drives For Current User
+
+Returns every shared cloud drive the current user can reach, whether permission is granted directly on the drive, through a user group, through a project, or through a project a user group is a member of. Duplicate drives across permission paths are de-duplicated. Each returned permission includes the fully-populated `SharedCloudDrive` with its decrypted `CloudAccount`.
 
 - **URL**: `/api/v1/sharedclouddrive/get_shared_cloud_drive`
 - **Method**: GET
@@ -169,33 +193,24 @@ Retrieves the shared cloud drive permissions for the current user.
 
 ### Response
 
+Returns a `List<UserSharedCloudDrivePermission>`:
+
 ```json
 [
   {
-    "id": "string (uuid)",
-    "userId": "string (uuid)",
-    "sharedCloudDriveId": "string (uuid)",
-    "permissionType": "integer (enum)",
-    "sharedCloudDrive": {
-      // SharedCloudDrive object
-    }
+    "id": "00000000-0000-0000-0000-000000000000",
+    "userId": "00000000-0000-0000-0000-000000000000",
+    "sharedCloudDriveId": "00000000-0000-0000-0000-000000000000",
+    "permissionType": 0,
+    "sharedCloudDrive": { }
   }
 ]
 ```
 
-## Error Responses
-
-All endpoints may return the following error responses:
-
-- `400 Bad Request`: The request was invalid or cannot be served.
-- `401 Unauthorized`: The request requires authentication.
-- `403 Forbidden`: The server understood the request but refuses to authorize it.
-- `404 Not Found`: The requested resource could not be found.
-- `500 Internal Server Error`: The server encountered an unexpected condition that prevented it from fulfilling the request.
 
 ## Sample Code
 
-### Get All Shared Cloud Drives
+### Create a shared cloud drive
 
 <details>
 <summary>Python</summary>
@@ -203,26 +218,21 @@ All endpoints may return the following error responses:
 ```python
 import requests
 
-url = "https://api.amove.com/api/v1/sharedclouddrive/get_all"
-headers = {
-    "Authorization": "Bearer YOUR_TOKEN_HERE"
-}
-params = {
-    "page": 1,
-    "pagesize": 10,
-    "sortfield": "Name",
-    "descending": False
-}
-
-response = requests.get(url, headers=headers, params=params)
-
-if response.status_code == 200:
-    shared_drives = response.json()
-    for drive in shared_drives['data']:
-        print(f"Shared Drive: {drive['name']}, Active: {drive['active']}")
-else:
-    print(f"Error: {response.status_code}")
-    print(response.text)
+requests.post(
+    "https://api.amove.io/api/v1/sharedclouddrive/insert",
+    headers={"Authorization": "Bearer YOUR_JWT"},
+    json={
+        "cloudAccountId": "00000000-0000-0000-0000-000000000000",
+        "active": True,
+        "name": "team-drive",
+        "storageName": "team-bucket",
+        "prefix": "team/",
+        "objectsPerFolder": 10000,
+        "allowDelete": False,
+        "driveType": 1,
+        "syncType": 2
+    },
+)
 ```
 
 </details>
@@ -231,70 +241,46 @@ else:
 <summary>JavaScript</summary>
 
 ```javascript
-fetch('https://api.amove.com/api/v1/sharedclouddrive/get_all?page=1&pagesize=10&sortfield=Name&descending=false', {
-  method: 'GET',
+await fetch("https://api.amove.io/api/v1/sharedclouddrive/insert", {
+  method: "POST",
   headers: {
-    'Authorization': 'Bearer YOUR_TOKEN_HERE'
-  }
-})
-.then(response => {
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-  return response.json();
-})
-.then(data => {
-  data.data.forEach(drive => {
-    console.log(`Shared Drive: ${drive.name}, Active: ${drive.active}`);
-  });
-})
-.catch(error => {
-  console.error('Error:', error);
+    "Authorization": "Bearer YOUR_JWT",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    cloudAccountId: "00000000-0000-0000-0000-000000000000",
+    active: true,
+    name: "team-drive",
+    storageName: "team-bucket",
+    prefix: "team/",
+    objectsPerFolder: 10000,
+    allowDelete: false,
+    driveType: 1,
+    syncType: 2
+  })
 });
 ```
 
 </details>
 
+### List drives accessible to the current user
+
 <details>
 <summary>C#</summary>
 
 ```csharp
-using System;
 using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
 
-class Program
-{
-    static async Task Main(string[] args)
-    {
-        using (var client = new HttpClient())
-        {
-            client.BaseAddress = new Uri("https://api.amove.com/");
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "YOUR_TOKEN_HERE");
+using var client = new HttpClient();
+client.DefaultRequestHeaders.Authorization =
+    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "YOUR_JWT");
 
-            var response = await client.GetAsync("api/v1/sharedclouddrive/get_all?page=1&pagesize=10&sortfield=Name&descending=false");
-
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                var sharedDrives = JObject.Parse(content);
-                foreach (var drive in sharedDrives["data"])
-                {
-                    Console.WriteLine($"Shared Drive: {drive["name"]}, Active: {drive["active"]}");
-                }
-            }
-            else
-            {
-                Console.WriteLine($"Error: {response.StatusCode}");
-            }
-        }
-    }
-}
+var res = await client.GetAsync(
+    "https://api.amove.io/api/v1/sharedclouddrive/get_shared_cloud_drive");
+Console.WriteLine(await res.Content.ReadAsStringAsync());
 ```
 
 </details>
 
-For more detailed examples and usage of other endpoints, please refer to our [Examples Directory](examples/README.md).
 
+For error handling, see [Error Model](errors.md).

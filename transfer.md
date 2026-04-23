@@ -1,19 +1,26 @@
 # Transfer Endpoints
 
-This document provides detailed information about the Transfer-related endpoints in the AMove API. These endpoints allow you to manage and monitor data transfer operations between cloud storage accounts.
+This document provides detailed information about the transfer endpoints in the AMove API. A `Transfer` is a cloud-to-cloud (C2C) copy operation between two cloud accounts the current user can access. The lifecycle is:
+
+1. **Calculate cost** — estimate the USD cost before running the transfer.
+2. **Transfer** — queue a new transfer; status progresses `Created → Running → Completed` (or `Error` / `Canceled`).
+3. **Cancel / Retry / Download Failed Files** — manage an in-flight or completed transfer.
+
+Progress updates are streamed in real time over the `/api/rm` SignalR hub; this REST surface lets you orchestrate transfers and query their state.
 
 ## Endpoints
 
 1. [Get All Transfers](#get-all-transfers)
-2. [Initiate Transfer](#initiate-transfer)
-3. [Calculate Transfer Cost](#calculate-transfer-cost)
+2. [Transfer](#transfer)
+3. [Calculate Cost](#calculate-cost)
 4. [Cancel Transfer](#cancel-transfer)
 5. [Retry Transfer](#retry-transfer)
 6. [Download Failed Files](#download-failed-files)
 
+
 ## Get All Transfers
 
-Retrieves the list of transfers associated with the current user's account.
+Returns every transfer initiated by any user in the current account, excluding transfers still in the `Created` state (i.e. queued but never picked up).
 
 - **URL**: `/api/v1/transfer/get_all`
 - **Method**: GET
@@ -26,79 +33,40 @@ Retrieves the list of transfers associated with the current user's account.
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "RequestDate" | Field to sort by |
-| descending | boolean | true | Sort direction; descending: true |
-| type | integer | 15 | Transfer type |
+| descending | boolean | true | Sort direction |
+| type | integer | 15 | Bitmask of `TransferType` values to include. |
+
+`type` is the bitwise OR of `TransferType`:
+
+| Value | Type |
+|---|---|
+| 1 | Transfer — an ad-hoc cloud-to-cloud copy |
+| 2 | Sync — a scheduled sync cycle |
+| 4 | SyncInitTransfer — the initial population step of a new sync |
+| 8 | ManualTransfer — a manually triggered transfer inside a sync |
+| 15 | All of the above (default) |
 
 ### Response
 
-```json
-{
-  "data": [
-    {
-      "id": "string (uuid)",
-      "userId": "string (uuid)",
-      "syncCycleId": "string (uuid)",
-      "sourceCloudAccountId": "string (uuid)",
-      "sourceBucket": "string",
-      "sourceRegion": "string",
-      "sourcePath": "string",
-      "destinationCloudAccountId": "string (uuid)",
-      "destinationBucket": "string",
-      "destinationRegion": "string",
-      "destinationPath": "string",
-      "requestDate": "string (date-time)",
-      "startDate": "string (date-time)",
-      "endDate": "string (date-time)",
-      "transferStatus": "integer (enum)",
-      "transferType": "integer (enum)",
-      "allowSkip": "boolean",
-      "allowDelete": "boolean",
-      "total": "integer",
-      "failed": "integer",
-      "deleted": "integer",
-      "skipped": "integer",
-      "skippedSize": "integer",
-      "transferred": "integer",
-      "totalSize": "integer",
-      "totalSizeString": "string",
-      "transferredSize": "integer",
-      "transferredSizeString": "string",
-      "percent": "number",
-      "averageSpeed": "number",
-      "transferredCost": "number",
-      "retryBatchTransferID": "string (uuid)",
-      "syncCycle": {
-        // SyncCycle object
-      },
-      "sourceCloudAccount": {
-        // CloudAccount object
-      },
-      "destinationCloudAccount": {
-        // CloudAccount object
-      }
-    }
-  ],
-  "total": "integer",
-  "options": {
-    "pageSize": "integer",
-    "page": "integer",
-    "sort": [
-      {
-        "field": "string",
-        "descending": "boolean"
-      }
-    ]
-  }
-}
-```
+Returns a `DTOCollection<Transfer>`. Each `Transfer` includes:
 
-## Initiate Transfer
+- `sourceCloudAccountId`, `sourceBucket`, `sourcePath`, `sourceRegion` and the matching `destination*` fields
+- `transferStatus` — one of `None(0)`, `Created(1)`, `Running(2)`, `Completed(4)`, `Canceled(8)`, `Error(16)`, `Canceling(32)`, `Pausing(64)`, `Paused(128)`
+- `total`, `transferred`, `failed`, `skipped`, `deleted` — object counts
+- `totalSize`, `transferredSize`, plus `totalSizeString` / `transferredSizeString` for human-readable values
+- `percent`, `averageSpeed` (bytes/sec), `transferredCost` (USD)
+- `requestDate`, `startDate`, `endDate`
 
-Sends a transfer request to initiate a new data transfer.
+Embedded `sourceCloudAccount` and `destinationCloudAccount` objects have their credential fields masked.
+
+
+## Transfer
+
+Queues a new cloud-to-cloud transfer. The request is accepted immediately and persisted as a `Transfer` record with status `Created`; the background dispatcher picks it up, streams progress updates over SignalR, and finalizes the record when the operation ends.
 
 - **URL**: `/api/v1/transfer/transfer`
 - **Method**: POST
-- **Auth Required**: Yes
+- **Auth Required**: Yes — `ProviderAdmin`, `AccountAdmin`, `DesktopAdmin`, or `DesktopCreativeUser`. (Regular `AccountUser` and `DesktopStandardUser` cannot initiate transfers.)
 
 ### Request Body
 
@@ -106,21 +74,35 @@ Sends a transfer request to initiate a new data transfer.
 {
   "sourceCloudAccountId": "string (uuid)",
   "sourceBucket": "string",
+  "sourceBucketId": "string",
   "sourcePath": "string",
+  "sourceId": "string",
   "destinationCloudAccountId": "string (uuid)",
   "destinationBucket": "string",
+  "destinationBucketId": "string",
   "destinationPath": "string",
-  "allowSkip": "boolean"
+  "destinationId": "string",
+  "allowSkip": true,
+  "keepSourceTree": false
 }
 ```
 
+- `sourceCloudAccountId` / `destinationCloudAccountId` — ids of the source and destination cloud accounts. Both must be visible to the caller.
+- `sourceBucket` / `destinationBucket` — bucket or container name on each side.
+- `sourceBucketId` / `destinationBucketId` — provider-specific bucket ids (used by Dropbox, Box, OneDrive, Google Drive). Empty for S3-compatible providers.
+- `sourcePath` / `destinationPath` — object key prefix on each side. A trailing `/` selects a folder; an exact key selects a single object.
+- `sourceId` / `destinationId` — provider-specific object ids (used by non-S3 providers). Empty for S3-compatible providers.
+- `allowSkip` — when `true`, the transfer skips objects whose newer copy already exists at the destination.
+- `keepSourceTree` — when `true`, the source directory structure is preserved under `destinationPath`; when `false`, objects are flattened.
+
 ### Response
 
-A successful initiation returns a `200 OK` status with no body.
+A `200 OK` status with no body. Poll [Get All Transfers](#get-all-transfers) or subscribe to the SignalR hub to observe progress.
 
-## Calculate Transfer Cost
 
-Calculates the cost of a transfer; returns the cost in USD.
+## Calculate Cost
+
+Estimates the USD cost of a transfer without running it. The cost factors in per-provider egress pricing and the total byte volume the transfer would move.
 
 - **URL**: `/api/v1/transfer/calculate_cost`
 - **Method**: POST
@@ -128,25 +110,20 @@ Calculates the cost of a transfer; returns the cost in USD.
 
 ### Request Body
 
-```json
-{
-  "sourceCloudAccountId": "string (uuid)",
-  "sourceBucket": "string",
-  "sourcePath": "string",
-  "destinationCloudAccountId": "string (uuid)",
-  "destinationBucket": "string",
-  "destinationPath": "string",
-  "allowSkip": "boolean"
-}
-```
+Same shape as the [Transfer](#transfer) request body.
 
 ### Response
 
-Returns a number representing the calculated cost in USD.
+Returns a single decimal value — the estimated cost in USD.
+
+```json
+0.42
+```
+
 
 ## Cancel Transfer
 
-Sends a cancel request to a running transfer.
+Requests cancellation of a transfer that is currently in `Running` state. The transfer transitions through `Canceling` and ends in `Canceled`.
 
 - **URL**: `/api/v1/transfer/cancel_transfer`
 - **Method**: POST
@@ -160,13 +137,16 @@ Sends a cancel request to a running transfer.
 }
 ```
 
+- `id` — id of the `Transfer` to cancel. Must belong to a user in the caller's Amove account.
+
 ### Response
 
-A successful cancellation returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
+
 
 ## Retry Transfer
 
-Sends a retry (failed files) request to a running transfer.
+Creates a new transfer that re-processes only the failed files from a previous run. The new transfer is linked to the original via the `retryBatchTransferID` field.
 
 - **URL**: `/api/v1/transfer/retry_transfer`
 - **Method**: POST
@@ -180,13 +160,16 @@ Sends a retry (failed files) request to a running transfer.
 }
 ```
 
+- `id` — id of the `Transfer` whose failures should be retried.
+
 ### Response
 
-A successful retry initiation returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
+
 
 ## Download Failed Files
 
-Sends a request to download failed files from a transfer.
+Generates a signed URL for a CSV report listing the files that failed during the specified transfer, along with their reasons. The URL is short-lived and can be handed off to a browser for direct download.
 
 - **URL**: `/api/v1/transfer/download_failed_files`
 - **Method**: POST
@@ -200,23 +183,20 @@ Sends a request to download failed files from a transfer.
 }
 ```
 
+- `id` — id of the `Transfer` to report on.
+
 ### Response
 
-Returns a string containing the URL to download the failed files.
+Returns a single string — the signed download URL.
 
-## Error Responses
+```json
+"https://..."
+```
 
-All endpoints may return the following error responses:
-
-- `400 Bad Request`: The request was invalid or cannot be served.
-- `401 Unauthorized`: The request requires authentication.
-- `403 Forbidden`: The server understood the request but refuses to authorize it.
-- `404 Not Found`: The requested resource could not be found.
-- `500 Internal Server Error`: The server encountered an unexpected condition that prevented it from fulfilling the request.
 
 ## Sample Code
 
-### Get All Transfers
+### Calculate cost, then run a transfer
 
 <details>
 <summary>Python</summary>
@@ -224,27 +204,32 @@ All endpoints may return the following error responses:
 ```python
 import requests
 
-url = "https://api.amove.com/api/v1/transfer/get_all"
-headers = {
-    "Authorization": "Bearer YOUR_TOKEN_HERE"
-}
-params = {
-    "page": 1,
-    "pagesize": 10,
-    "sortfield": "RequestDate",
-    "descending": True,
-    "type": 15
+BASE = "https://api.amove.io"
+JWT = "YOUR_JWT"
+
+payload = {
+    "sourceCloudAccountId": "00000000-0000-0000-0000-000000000000",
+    "sourceBucket": "source-bucket",
+    "sourcePath": "/photos/",
+    "destinationCloudAccountId": "11111111-1111-1111-1111-111111111111",
+    "destinationBucket": "dest-bucket",
+    "destinationPath": "/backup/photos/",
+    "allowSkip": True,
+    "keepSourceTree": True,
 }
 
-response = requests.get(url, headers=headers, params=params)
+cost = requests.post(
+    f"{BASE}/api/v1/transfer/calculate_cost",
+    headers={"Authorization": f"Bearer {JWT}"},
+    json=payload,
+).json()
+print(f"Estimated cost: ${cost}")
 
-if response.status_code == 200:
-    transfers = response.json()
-    for transfer in transfers['data']:
-        print(f"Transfer ID: {transfer['id']}, Status: {transfer['transferStatus']}, Progress: {transfer['percent']}%")
-else:
-    print(f"Error: {response.status_code}")
-    print(response.text)
+requests.post(
+    f"{BASE}/api/v1/transfer/transfer",
+    headers={"Authorization": f"Bearer {JWT}"},
+    json=payload,
+)
 ```
 
 </details>
@@ -253,25 +238,32 @@ else:
 <summary>JavaScript</summary>
 
 ```javascript
-fetch('https://api.amove.com/api/v1/transfer/get_all?page=1&pagesize=10&sortfield=RequestDate&descending=true&type=15', {
-  method: 'GET',
-  headers: {
-    'Authorization': 'Bearer YOUR_TOKEN_HERE'
-  }
-})
-.then(response => {
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-  return response.json();
-})
-.then(data => {
-  data.data.forEach(transfer => {
-    console.log(`Transfer ID: ${transfer.id}, Status: ${transfer.transferStatus}, Progress: ${transfer.percent}%`);
-  });
-})
-.catch(error => {
-  console.error('Error:', error);
+const BASE = "https://api.amove.io";
+const JWT = "YOUR_JWT";
+
+const payload = {
+  sourceCloudAccountId: "00000000-0000-0000-0000-000000000000",
+  sourceBucket: "source-bucket",
+  sourcePath: "/photos/",
+  destinationCloudAccountId: "11111111-1111-1111-1111-111111111111",
+  destinationBucket: "dest-bucket",
+  destinationPath: "/backup/photos/",
+  allowSkip: true,
+  keepSourceTree: true
+};
+
+const headers = {
+  "Authorization": `Bearer ${JWT}`,
+  "Content-Type": "application/json"
+};
+
+const cost = await fetch(`${BASE}/api/v1/transfer/calculate_cost`, {
+  method: "POST", headers, body: JSON.stringify(payload)
+}).then(r => r.json());
+console.log("Estimated cost:", cost);
+
+await fetch(`${BASE}/api/v1/transfer/transfer`, {
+  method: "POST", headers, body: JSON.stringify(payload)
 });
 ```
 
@@ -281,42 +273,80 @@ fetch('https://api.amove.com/api/v1/transfer/get_all?page=1&pagesize=10&sortfiel
 <summary>C#</summary>
 
 ```csharp
-using System;
 using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
+using System.Net.Http.Json;
 
-class Program
+using var client = new HttpClient { BaseAddress = new Uri("https://api.amove.io/") };
+client.DefaultRequestHeaders.Authorization =
+    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "YOUR_JWT");
+
+var payload = new
 {
-    static async Task Main(string[] args)
-    {
-        using (var client = new HttpClient())
-        {
-            client.BaseAddress = new Uri("https://api.amove.com/");
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "YOUR_TOKEN_HERE");
+    sourceCloudAccountId = Guid.Parse("00000000-0000-0000-0000-000000000000"),
+    sourceBucket = "source-bucket",
+    sourcePath = "/photos/",
+    destinationCloudAccountId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+    destinationBucket = "dest-bucket",
+    destinationPath = "/backup/photos/",
+    allowSkip = true,
+    keepSourceTree = true
+};
 
-            var response = await client.GetAsync("api/v1/transfer/get_all?page=1&pagesize=10&sortfield=RequestDate&descending=true&type=15");
+decimal cost = await (await client.PostAsJsonAsync("api/v1/transfer/calculate_cost", payload))
+    .Content.ReadFromJsonAsync<decimal>();
+Console.WriteLine($"Estimated cost: ${cost}");
 
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                var transfers = JObject.Parse(content);
-                foreach (var transfer in transfers["data"])
-                {
-                    Console.WriteLine($"Transfer ID: {transfer["id"]}, Status: {transfer["transferStatus"]}, Progress: {transfer["percent"]}%");
-                }
-            }
-            else
-            {
-                Console.WriteLine($"Error: {response.StatusCode}");
-            }
-        }
-    }
-}
+await client.PostAsJsonAsync("api/v1/transfer/transfer", payload);
 ```
 
 </details>
 
-For more detailed examples and usage of other endpoints, please refer to our [Examples Directory](examples/README.md).
 
+### Cancel an in-flight transfer
+
+<details>
+<summary>Python</summary>
+
+```python
+import requests
+
+requests.post(
+    "https://api.amove.io/api/v1/transfer/cancel_transfer",
+    headers={"Authorization": "Bearer YOUR_JWT"},
+    json={"id": "00000000-0000-0000-0000-000000000000"},
+)
+```
+
+</details>
+
+
+### Retry failed files and download the failure report
+
+<details>
+<summary>Python</summary>
+
+```python
+import requests
+
+BASE = "https://api.amove.io"
+JWT = "YOUR_JWT"
+transfer_id = "00000000-0000-0000-0000-000000000000"
+
+requests.post(
+    f"{BASE}/api/v1/transfer/retry_transfer",
+    headers={"Authorization": f"Bearer {JWT}"},
+    json={"id": transfer_id},
+)
+
+download_url = requests.post(
+    f"{BASE}/api/v1/transfer/download_failed_files",
+    headers={"Authorization": f"Bearer {JWT}"},
+    json={"id": transfer_id},
+).json()
+print(download_url)
+```
+
+</details>
+
+
+For error handling, see [Error Model](errors.md).

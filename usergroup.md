@@ -1,22 +1,24 @@
-# UserGroup Endpoints
+# User Group Endpoints
 
-This document provides detailed information about the UserGroup-related endpoints in the AMove API. These endpoints allow you to manage user groups, assign users to groups, and manage group-related operations.
+This document provides detailed information about the user-group endpoints in the AMove API. A user group is an account-scoped collection of users that can be granted permissions on projects and shared cloud drives collectively.
 
 ## Endpoints
 
 1. [Get All User Groups](#get-all-user-groups)
-2. [Insert User Group](#insert-user-group)
-3. [Update User Group](#update-user-group)
-4. [Delete User Group](#delete-user-group)
-5. [Get Assigned Users](#get-assigned-users)
-6. [Get Assigned User Groups](#get-assigned-user-groups)
-7. [Assign Users](#assign-users)
-8. [Unassign User](#unassign-user)
-9. [Import Users](#import-users)
+2. [Get All User Groups With Details](#get-all-user-groups-with-details)
+3. [Insert User Group](#insert-user-group)
+4. [Update User Group](#update-user-group)
+5. [Delete User Group](#delete-user-group)
+6. [Get Assigned Users](#get-assigned-users)
+7. [Get Assigned User Groups](#get-assigned-user-groups)
+8. [Assign Users](#assign-users)
+9. [Unassign User](#unassign-user)
+10. [Import Users](#import-users)
+
 
 ## Get All User Groups
 
-Retrieves the list of user groups defined in the system.
+Returns a paginated list of user groups in the current user's account.
 
 - **URL**: `/api/v1/usergroup/get_all`
 - **Method**: GET
@@ -29,41 +31,75 @@ Retrieves the list of user groups defined in the system.
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "Name" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
-| deleted | boolean | false | When true, return deleted records in the result |
-| name | string | - | UserGroup name to filter by |
+| descending | boolean | false | Sort direction |
+| deleted | boolean | false | When `true`, return soft-deleted groups instead of active ones |
+| name | string | null | Optional case-insensitive substring filter on group name |
 
 ### Response
+
+Returns a `DTOCollection<UserGroup>`:
 
 ```json
 {
   "data": [
     {
-      "id": "string (uuid)",
-      "accountId": "string (uuid)",
-      "name": "string",
-      "description": "string",
-      "active": "boolean",
-      "deleted": "boolean"
+      "id": "00000000-0000-0000-0000-000000000000",
+      "accountId": "00000000-0000-0000-0000-000000000000",
+      "name": "Engineering",
+      "description": "Engineering department",
+      "active": true,
+      "deleted": false
     }
   ],
-  "total": "integer",
-  "options": {
-    "pageSize": "integer",
-    "page": "integer",
-    "sort": [
-      {
-        "field": "string",
-        "descending": "boolean"
-      }
-    ]
-  }
+  "total": 1
 }
 ```
 
+
+## Get All User Groups With Details
+
+Same filters and paging as [Get All User Groups](#get-all-user-groups), but each group is returned with its assigned projects, member users, and shared cloud drives inline.
+
+- **URL**: `/api/v1/usergroup/get_all_with_details`
+- **Method**: GET
+- **Auth Required**: Yes
+
+### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| page | integer | 1 | Starting page |
+| pagesize | integer | 50 | Page size |
+| sortfield | string | "Name" | Field to sort by |
+| descending | boolean | false | Sort direction |
+| deleted | boolean | false | When `true`, return soft-deleted groups |
+| name | string | null | Optional case-insensitive substring filter on group name |
+
+### Response
+
+Returns a `DTOCollection<UserGroupWithDetailsDTO>`. Each item:
+
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "name": "Engineering",
+  "description": "Engineering department",
+  "projectsData": [
+    { "project": { }, "permission": { } }
+  ],
+  "usersData": [
+    { "user": { }, "userUserGroup": { } }
+  ],
+  "drivesData": [
+    { "sharedCloudDrive": { }, "permission": { } }
+  ]
+}
+```
+
+
 ## Insert User Group
 
-Insert a new user group.
+Creates a new user group under the current user's account. The server overrides `accountId` with the caller's account id.
 
 - **URL**: `/api/v1/usergroup/insert`
 - **Method**: POST
@@ -73,21 +109,20 @@ Insert a new user group.
 
 ```json
 {
-  "accountId": "string (uuid)",
-  "name": "string",
+  "name": "string (max 100)",
   "description": "string",
-  "active": "boolean",
-  "deleted": "boolean"
+  "active": true
 }
 ```
 
 ### Response
 
-Returns the created UserGroup object.
+Returns the newly-created `UserGroup` object.
+
 
 ## Update User Group
 
-Update an existing user group.
+Updates an existing user group. `accountId` is always reset to the caller's account.
 
 - **URL**: `/api/v1/usergroup/update`
 - **Method**: PUT
@@ -95,24 +130,16 @@ Update an existing user group.
 
 ### Request Body
 
-```json
-{
-  "id": "string (uuid)",
-  "accountId": "string (uuid)",
-  "name": "string",
-  "description": "string",
-  "active": "boolean",
-  "deleted": "boolean"
-}
-```
+A full `UserGroup` object including the `id` of the record to update.
 
 ### Response
 
-Returns the updated UserGroup object.
+Returns the updated `UserGroup`.
+
 
 ## Delete User Group
 
-Delete an existing user group.
+Soft-deletes a user group. Because `UserGroup` implements `ILogicalDeleteableEntity`, the record is marked `Deleted = true` rather than physically removed.
 
 - **URL**: `/api/v1/usergroup/delete`
 - **Method**: DELETE
@@ -122,15 +149,16 @@ Delete an existing user group.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| id | string (uuid) | Id of user group to delete |
+| id | string (uuid) | Id of the user group to delete |
 
 ### Response
 
-A successful deletion returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
+
 
 ## Get Assigned Users
 
-Retrieves the list of users that are assigned to a user group.
+Lists the users in a given user group. Soft-deleted users are excluded.
 
 - **URL**: `/api/v1/usergroup/get_assigned_users`
 - **Method**: GET
@@ -140,20 +168,21 @@ Retrieves the list of users that are assigned to a user group.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| userGroupId | string (uuid) | - | UserGroup id |
+| userGroupId | string (uuid) | — | User group whose members to list |
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "User.Username" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
-| username | string | - | Username to filter by |
+| descending | boolean | false | Sort direction |
+| username | string | null | Optional case-insensitive substring filter on username |
 
 ### Response
 
-Returns a collection of UserUserGroupDTO objects.
+Returns a `DTOCollection<UserUserGroupDTO>`. Each item contains the full `User` and the joining `UserUserGroup` record.
+
 
 ## Get Assigned User Groups
 
-Retrieves the list of user groups that are assigned to a user.
+Lists the user groups a given user belongs to. Soft-deleted groups are excluded.
 
 - **URL**: `/api/v1/usergroup/get_assigned_usergroups`
 - **Method**: GET
@@ -163,20 +192,21 @@ Retrieves the list of user groups that are assigned to a user.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| userId | string (uuid) | - | User id |
+| userId | string (uuid) | — | User whose group memberships to list |
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "UserGroup.Name" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
-| name | string | - | UserGroup name to filter by |
+| descending | boolean | false | Sort direction |
+| name | string | null | Optional case-insensitive substring filter on group name |
 
 ### Response
 
-Returns a collection of UserUserGroupDTO objects.
+Returns a `DTOCollection<UserUserGroupDTO>`. Each item contains the full `UserGroup` and the joining `UserUserGroup` record.
+
 
 ## Assign Users
 
-Assign users to a user group.
+Adds one or more users to user groups. Existing `(UserId, UserGroupId)` pairs are skipped silently.
 
 - **URL**: `/api/v1/usergroup/assign_users`
 - **Method**: POST
@@ -184,23 +214,25 @@ Assign users to a user group.
 
 ### Request Body
 
+An array of `UserUserGroup` entries:
+
 ```json
 [
   {
-    "id": "string (uuid)",
-    "userId": "string (uuid)",
-    "userGroupId": "string (uuid)"
+    "userId": "00000000-0000-0000-0000-000000000000",
+    "userGroupId": "00000000-0000-0000-0000-000000000000"
   }
 ]
 ```
 
 ### Response
 
-A successful assignment returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
+
 
 ## Unassign User
 
-Unassign a user from a user group.
+Removes a single user-to-group membership.
 
 - **URL**: `/api/v1/usergroup/unassign_user`
 - **Method**: DELETE
@@ -210,52 +242,53 @@ Unassign a user from a user group.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| id | string (uuid) | Id of the assignment to delete |
+| id | string (uuid) | Id of the `UserUserGroup` record to delete |
 
 ### Response
 
-A successful unassignment returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
+
 
 ## Import Users
 
-Import users from a value.
+Bulk-imports users into user groups. For each entry: if the user already exists in the caller's account it is reused; if the username exists in a different account the entry is skipped; otherwise a new user is created and the caller's billing subscription is extended to include the new seat (subscription status must be `Active`). Each named user group is created if absent, and the user is assigned to it. Group and user creation are additive; existing assignments are left intact.
 
 - **URL**: `/api/v1/usergroup/import_users`
 - **Method**: POST
 - **Auth Required**: Yes
 
+If the current user has no active billing subscription, the endpoint returns HTTP `402 Payment Required` before doing any work.
+
 ### Request Body
+
+An array of `UserUserGroupRelation`:
 
 ```json
 [
   {
     "user": {
-      // User object
+      "username": "user@example.com",
+      "email": "user@example.com",
+      "userType": 64
     },
     "userGroups": [
-      // UserGroup objects
+      { "name": "Engineering" }
     ]
   }
 ]
 ```
 
+- `user.userType` — `UserType` flag: `16` DesktopAdmin, `32` DesktopCreativeUser, `64` DesktopStandardUser.
+- `userGroups` — list of groups to join (matched case-insensitively by `name`; created when missing).
+
 ### Response
 
-A successful import returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
 
-## Error Responses
-
-All endpoints may return the following error responses:
-
-- `400 Bad Request`: The request was invalid or cannot be served.
-- `401 Unauthorized`: The request requires authentication.
-- `403 Forbidden`: The server understood the request but refuses to authorize it.
-- `404 Not Found`: The requested resource could not be found.
-- `500 Internal Server Error`: The server encountered an unexpected condition that prevented it from fulfilling the request.
 
 ## Sample Code
 
-### Get All User Groups
+### Create a group and import users into it
 
 <details>
 <summary>Python</summary>
@@ -263,26 +296,27 @@ All endpoints may return the following error responses:
 ```python
 import requests
 
-url = "https://api.amove.com/api/v1/usergroup/get_all"
-headers = {
-    "Authorization": "Bearer YOUR_TOKEN_HERE"
-}
-params = {
-    "page": 1,
-    "pagesize": 10,
-    "sortfield": "Name",
-    "descending": False
-}
+JWT = "YOUR_JWT"
+BASE = "https://api.amove.io"
 
-response = requests.get(url, headers=headers, params=params)
+group = requests.post(
+    f"{BASE}/api/v1/usergroup/insert",
+    headers={"Authorization": f"Bearer {JWT}"},
+    json={"name": "Engineering", "description": "Engineering department", "active": True},
+).json()
 
-if response.status_code == 200:
-    user_groups = response.json()
-    for group in user_groups['data']:
-        print(f"User Group: {group['name']}, Active: {group['active']}")
-else:
-    print(f"Error: {response.status_code}")
-    print(response.text)
+requests.post(
+    f"{BASE}/api/v1/usergroup/import_users",
+    headers={"Authorization": f"Bearer {JWT}"},
+    json=[{
+        "user": {
+            "username": "user@example.com",
+            "email": "user@example.com",
+            "userType": 64
+        },
+        "userGroups": [{"name": "Engineering"}]
+    }],
+)
 ```
 
 </details>
@@ -291,70 +325,53 @@ else:
 <summary>JavaScript</summary>
 
 ```javascript
-fetch('https://api.amove.com/api/v1/usergroup/get_all?page=1&pagesize=10&sortfield=Name&descending=false', {
-  method: 'GET',
-  headers: {
-    'Authorization': 'Bearer YOUR_TOKEN_HERE'
-  }
-})
-.then(response => {
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-  return response.json();
-})
-.then(data => {
-  data.data.forEach(group => {
-    console.log(`User Group: ${group.name}, Active: ${group.active}`);
-  });
-})
-.catch(error => {
-  console.error('Error:', error);
+const JWT = "YOUR_JWT";
+const BASE = "https://api.amove.io";
+
+const group = await fetch(`${BASE}/api/v1/usergroup/insert`, {
+  method: "POST",
+  headers: { "Authorization": `Bearer ${JWT}`, "Content-Type": "application/json" },
+  body: JSON.stringify({ name: "Engineering", description: "Engineering department", active: true })
+}).then(r => r.json());
+
+await fetch(`${BASE}/api/v1/usergroup/import_users`, {
+  method: "POST",
+  headers: { "Authorization": `Bearer ${JWT}`, "Content-Type": "application/json" },
+  body: JSON.stringify([{
+    user: { username: "user@example.com", email: "user@example.com", userType: 64 },
+    userGroups: [{ name: "Engineering" }]
+  }])
 });
 ```
 
 </details>
 
+### Assign existing users to an existing group
+
 <details>
 <summary>C#</summary>
 
 ```csharp
-using System;
 using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
+using System.Net.Http.Json;
 
-class Program
+using var client = new HttpClient();
+client.DefaultRequestHeaders.Authorization =
+    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "YOUR_JWT");
+
+var payload = new[]
 {
-    static async Task Main(string[] args)
+    new
     {
-        using (var client = new HttpClient())
-        {
-            client.BaseAddress = new Uri("https://api.amove.com/");
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "YOUR_TOKEN_HERE");
-
-            var response = await client.GetAsync("api/v1/usergroup/get_all?page=1&pagesize=10&sortfield=Name&descending=false");
-
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                var userGroups = JObject.Parse(content);
-                foreach (var group in userGroups["data"])
-                {
-                    Console.WriteLine($"User Group: {group["name"]}, Active: {group["active"]}");
-                }
-            }
-            else
-            {
-                Console.WriteLine($"Error: {response.StatusCode}");
-            }
-        }
+        userId = Guid.Parse("00000000-0000-0000-0000-000000000000"),
+        userGroupId = Guid.Parse("00000000-0000-0000-0000-000000000000")
     }
-}
+};
+
+await client.PostAsJsonAsync("https://api.amove.io/api/v1/usergroup/assign_users", payload);
 ```
 
 </details>
 
-For more detailed examples and usage of other endpoints, please refer to our [Examples Directory](examples/README.md).
 
+For error handling, see [Error Model](errors.md).

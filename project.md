@@ -1,21 +1,23 @@
 # Project Endpoints
 
-This document provides detailed information about the Project-related endpoints in the AMove API. These endpoints allow you to manage projects and their associated resources.
+This document provides detailed information about the Project-related endpoints in the AMove API. Projects are account-scoped groupings of shared cloud drives, users, and user groups.
 
 ## Endpoints
 
 1. [Get All Projects](#get-all-projects)
-2. [Insert Project](#insert-project)
-3. [Update Project](#update-project)
-4. [Delete Project](#delete-project)
-5. [Get Assigned Shared Cloud Drives](#get-assigned-shared-cloud-drives)
-6. [Get Assigned Projects](#get-assigned-projects)
-7. [Assign Shared Cloud Drive](#assign-shared-cloud-drive)
-8. [Unassign Shared Cloud Drive](#unassign-shared-cloud-drive)
+2. [Get All Projects With Details](#get-all-projects-with-details)
+3. [Insert Project](#insert-project)
+4. [Update Project](#update-project)
+5. [Delete Project](#delete-project)
+6. [Get Assigned Shared Cloud Drives](#get-assigned-shared-cloud-drives)
+7. [Get Assigned Projects](#get-assigned-projects)
+8. [Assign Shared Cloud Drive](#assign-shared-cloud-drive)
+9. [Unassign Shared Cloud Drive](#unassign-shared-cloud-drive)
+
 
 ## Get All Projects
 
-Retrieves the list of projects defined in the system.
+Returns a paginated list of projects in the current user's account. The caller can optionally include soft-deleted records and filter by a case-insensitive substring match on the project name.
 
 - **URL**: `/api/v1/project/get_all`
 - **Method**: GET
@@ -28,41 +30,70 @@ Retrieves the list of projects defined in the system.
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "Name" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
-| deleted | boolean | false | When true, return deleted records in the result |
-| name | string | - | Project name to filter by |
+| descending | boolean | false | Sort direction |
+| deleted | boolean | false | When `true`, return soft-deleted projects instead of active ones |
+| name | string | null | Optional case-insensitive substring filter on project name |
 
 ### Response
 
+Returns a `DTOCollection<Project>`. Each project has:
+
 ```json
 {
-  "data": [
-    {
-      "id": "string (uuid)",
-      "accountId": "string (uuid)",
-      "name": "string",
-      "description": "string",
-      "active": "boolean",
-      "deleted": "boolean"
-    }
-  ],
-  "total": "integer",
-  "options": {
-    "pageSize": "integer",
-    "page": "integer",
-    "sort": [
-      {
-        "field": "string",
-        "descending": "boolean"
-      }
-    ]
-  }
+  "id": "00000000-0000-0000-0000-000000000000",
+  "accountId": "00000000-0000-0000-0000-000000000000",
+  "name": "Marketing",
+  "description": "Marketing team shared assets",
+  "active": true,
+  "deleted": false
 }
 ```
 
+
+## Get All Projects With Details
+
+Same filtering and paging as [Get All Projects](#get-all-projects), but each project is returned with its assigned users, user groups, and shared cloud drives inlined in a single response — avoiding the per-project follow-up calls otherwise needed to resolve these relationships.
+
+- **URL**: `/api/v1/project/get_all_with_details`
+- **Method**: GET
+- **Auth Required**: Yes
+
+### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| page | integer | 1 | Starting page |
+| pagesize | integer | 50 | Page size |
+| sortfield | string | "Name" | Field to sort by |
+| descending | boolean | false | Sort direction |
+| deleted | boolean | false | When `true`, return soft-deleted projects instead of active ones |
+| name | string | null | Optional case-insensitive substring filter on project name |
+
+### Response
+
+Returns a `DTOCollection<ProjectWithDetailsDTO>`. Each item carries the base project fields plus three collections:
+
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "name": "Marketing",
+  "description": "Marketing team shared assets",
+  "usersData": [
+    { "user": { }, "permission": { } }
+  ],
+  "groupsData": [
+    { "userGroup": { }, "permission": { } }
+  ],
+  "drivesData": [
+    { "sharedCloudDrive": { }, "projectSharedCloudDrive": { } }
+  ]
+}
+```
+
+
 ## Insert Project
 
-Insert a new project.
+Creates a new project under the current user's account. The `accountId` on the request body is ignored and overwritten with the caller's account id.
 
 - **URL**: `/api/v1/project/insert`
 - **Method**: POST
@@ -72,21 +103,20 @@ Insert a new project.
 
 ```json
 {
-  "accountId": "string (uuid)",
-  "name": "string",
+  "name": "string (max 100)",
   "description": "string",
-  "active": "boolean",
-  "deleted": "boolean"
+  "active": "boolean"
 }
 ```
 
 ### Response
 
-Returns the created project object.
+Returns the newly-created `Project` object, including its server-generated `id`.
+
 
 ## Update Project
 
-Update an existing project.
+Updates an existing project. The project's `accountId` is always reset to the caller's account id on the server.
 
 - **URL**: `/api/v1/project/update`
 - **Method**: PUT
@@ -96,22 +126,21 @@ Update an existing project.
 
 ```json
 {
-  "id": "string (uuid)",
-  "accountId": "string (uuid)",
+  "id": "00000000-0000-0000-0000-000000000000",
   "name": "string",
   "description": "string",
-  "active": "boolean",
-  "deleted": "boolean"
+  "active": true
 }
 ```
 
 ### Response
 
-Returns the updated project object.
+Returns the updated `Project`.
+
 
 ## Delete Project
 
-Delete an existing project.
+Soft-deletes a project. Because `Project` implements `ILogicalDeleteableEntity`, the record is marked `Deleted = true` rather than physically removed.
 
 - **URL**: `/api/v1/project/delete`
 - **Method**: DELETE
@@ -121,15 +150,16 @@ Delete an existing project.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| id | string (uuid) | Id of project to delete |
+| id | string (uuid) | Id of the project to delete |
 
 ### Response
 
-A successful deletion returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
+
 
 ## Get Assigned Shared Cloud Drives
 
-Retrieves the list of shared cloud drives assigned to a project.
+Lists the shared cloud drives currently attached to a given project.
 
 - **URL**: `/api/v1/project/get_assigned_sharedclouddrives`
 - **Method**: GET
@@ -139,53 +169,20 @@ Retrieves the list of shared cloud drives assigned to a project.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| projectId | string (uuid) | - | Project ID |
+| projectId | string (uuid) | — | The project whose attached drives to list |
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "SharedCloudDrive.Name" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
+| descending | boolean | false | Sort direction |
 
 ### Response
 
-```json
-{
-  "data": [
-    {
-      "sharedCloudDrive": {
-        "id": "string (uuid)",
-        "name": "string",
-        "prefix": "string",
-        "storageName": "string"
-      },
-      "project": {
-        "id": "string (uuid)",
-        "name": "string",
-        "description": "string"
-      },
-      "projectSharedCloudDrive": {
-        "id": "string (uuid)",
-        "projectId": "string (uuid)",
-        "sharedCloudDriveId": "string (uuid)"
-      }
-    }
-  ],
-  "total": "integer",
-  "options": {
-    "pageSize": "integer",
-    "page": "integer",
-    "sort": [
-      {
-        "field": "string",
-        "descending": "boolean"
-      }
-    ]
-  }
-}
-```
+Returns a `DTOCollection<SharedCloudDriveProjectDTO>`. Each item contains the full `SharedCloudDrive` and the joining `ProjectSharedCloudDrive` record.
+
 
 ## Get Assigned Projects
 
-Retrieves the list of projects assigned to a shared cloud drive.
+Lists the projects currently attached to a given shared cloud drive.
 
 - **URL**: `/api/v1/project/get_assigned_projects`
 - **Method**: GET
@@ -195,53 +192,20 @@ Retrieves the list of projects assigned to a shared cloud drive.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| sharedCloudDriveId | string (uuid) | - | Shared Cloud Drive ID |
+| sharedCloudDriveId | string (uuid) | — | The shared drive whose attached projects to list |
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "Project.Name" | Field to sort by |
-| descending | boolean | false | Sort direction; descending: true |
+| descending | boolean | false | Sort direction |
 
 ### Response
 
-```json
-{
-  "data": [
-    {
-      "sharedCloudDrive": {
-        "id": "string (uuid)",
-        "name": "string",
-        "prefix": "string",
-        "storageName": "string"
-      },
-      "project": {
-        "id": "string (uuid)",
-        "name": "string",
-        "description": "string"
-      },
-      "projectSharedCloudDrive": {
-        "id": "string (uuid)",
-        "projectId": "string (uuid)",
-        "sharedCloudDriveId": "string (uuid)"
-      }
-    }
-  ],
-  "total": "integer",
-  "options": {
-    "pageSize": "integer",
-    "page": "integer",
-    "sort": [
-      {
-        "field": "string",
-        "descending": "boolean"
-      }
-    ]
-  }
-}
-```
+Returns a `DTOCollection<SharedCloudDriveProjectDTO>`, each item containing the full `Project` and the joining `ProjectSharedCloudDrive` record.
+
 
 ## Assign Shared Cloud Drive
 
-Assign a shared cloud drive to a project.
+Attaches one or more shared cloud drives to projects. The server rejects duplicate `(ProjectId, SharedCloudDriveId)` pairs silently — any pair that already exists is skipped.
 
 - **URL**: `/api/v1/project/assign_sharedclouddrive`
 - **Method**: POST
@@ -249,23 +213,25 @@ Assign a shared cloud drive to a project.
 
 ### Request Body
 
+An array of `ProjectSharedCloudDrive` entries:
+
 ```json
 [
   {
-    "id": "string (uuid)",
-    "projectId": "string (uuid)",
-    "sharedCloudDriveId": "string (uuid)"
+    "projectId": "00000000-0000-0000-0000-000000000000",
+    "sharedCloudDriveId": "00000000-0000-0000-0000-000000000000"
   }
 ]
 ```
 
 ### Response
 
-A successful assignment returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
+
 
 ## Unassign Shared Cloud Drive
 
-Unassign a shared cloud drive from a project.
+Removes an attachment between a project and a shared cloud drive.
 
 - **URL**: `/api/v1/project/unassign_sharedclouddrive`
 - **Method**: DELETE
@@ -275,25 +241,16 @@ Unassign a shared cloud drive from a project.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| id | string (uuid) | ID of the assignment to delete |
+| id | string (uuid) | Id of the `ProjectSharedCloudDrive` record to delete |
 
 ### Response
 
-A successful unassignment returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
 
-## Error Responses
-
-All endpoints may return the following error responses:
-
-- `400 Bad Request`: The request was invalid or cannot be served.
-- `401 Unauthorized`: The request requires authentication.
-- `403 Forbidden`: The server understood the request but refuses to authorize it.
-- `404 Not Found`: The requested resource could not be found.
-- `500 Internal Server Error`: The server encountered an unexpected condition that prevented it from fulfilling the request.
 
 ## Sample Code
 
-### Get All Projects
+### Create a project and list it
 
 <details>
 <summary>Python</summary>
@@ -301,26 +258,21 @@ All endpoints may return the following error responses:
 ```python
 import requests
 
-url = "https://api.amove.com/api/v1/project/get_all"
-headers = {
-    "Authorization": "Bearer YOUR_TOKEN_HERE"
-}
-params = {
-    "page": 1,
-    "pagesize": 10,
-    "sortfield": "Name",
-    "descending": False
-}
+JWT = "YOUR_JWT"
+BASE = "https://api.amove.io"
 
-response = requests.get(url, headers=headers, params=params)
+created = requests.post(
+    f"{BASE}/api/v1/project/insert",
+    headers={"Authorization": f"Bearer {JWT}"},
+    json={"name": "Marketing", "description": "Marketing team assets", "active": True},
+).json()
 
-if response.status_code == 200:
-    projects = response.json()
-    for project in projects['data']:
-        print(f"Project: {project['name']}, Active: {project['active']}")
-else:
-    print(f"Error: {response.status_code}")
-    print(response.text)
+projects = requests.get(
+    f"{BASE}/api/v1/project/get_all",
+    headers={"Authorization": f"Bearer {JWT}"},
+    params={"page": 1, "pagesize": 50},
+).json()
+print(projects["data"])
 ```
 
 </details>
@@ -329,26 +281,22 @@ else:
 <summary>JavaScript</summary>
 
 ```javascript
-fetch('https://api.amove.com/api/v1/project/get_all?page=1&pagesize=10&sortfield=Name&descending=false', {
-  method: 'GET',
+const JWT = "YOUR_JWT";
+const BASE = "https://api.amove.io";
+
+await fetch(`${BASE}/api/v1/project/insert`, {
+  method: "POST",
   headers: {
-    'Authorization': 'Bearer YOUR_TOKEN_HERE'
-  }
-})
-.then(response => {
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-  return response.json();
-})
-.then(data => {
-  data.data.forEach(project => {
-    console.log(`Project: ${project.name}, Active: ${project.active}`);
-  });
-})
-.catch(error => {
-  console.error('Error:', error);
+    "Authorization": `Bearer ${JWT}`,
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({ name: "Marketing", description: "Marketing team assets", active: true })
 });
+
+const list = await fetch(`${BASE}/api/v1/project/get_all?page=1&pagesize=50`, {
+  headers: { "Authorization": `Bearer ${JWT}` }
+}).then(r => r.json());
+console.log(list.data);
 ```
 
 </details>
@@ -357,42 +305,45 @@ fetch('https://api.amove.com/api/v1/project/get_all?page=1&pagesize=10&sortfield
 <summary>C#</summary>
 
 ```csharp
-using System;
 using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
+using System.Net.Http.Json;
 
-class Program
+using var client = new HttpClient { BaseAddress = new Uri("https://api.amove.io/") };
+client.DefaultRequestHeaders.Authorization =
+    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "YOUR_JWT");
+
+await client.PostAsJsonAsync("api/v1/project/insert", new
 {
-    static async Task Main(string[] args)
-    {
-        using (var client = new HttpClient())
-        {
-            client.BaseAddress = new Uri("https://api.amove.com/");
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "YOUR_TOKEN_HERE");
+    name = "Marketing",
+    description = "Marketing team assets",
+    active = true
+});
 
-            var response = await client.GetAsync("api/v1/project/get_all?page=1&pagesize=10&sortfield=Name&descending=false");
-
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                var projects = JObject.Parse(content);
-                foreach (var project in projects["data"])
-                {
-                    Console.WriteLine($"Project: {project["name"]}, Active: {project["active"]}");
-                }
-            }
-            else
-            {
-                Console.WriteLine($"Error: {response.StatusCode}");
-            }
-        }
-    }
-}
+var res = await client.GetAsync("api/v1/project/get_all?page=1&pagesize=50");
+Console.WriteLine(await res.Content.ReadAsStringAsync());
 ```
 
 </details>
 
-For more detailed examples and usage of other endpoints, please refer to our [Examples Directory](examples/README.md).
+### Attach a shared cloud drive to a project
 
+<details>
+<summary>Python</summary>
+
+```python
+import requests
+
+requests.post(
+    "https://api.amove.io/api/v1/project/assign_sharedclouddrive",
+    headers={"Authorization": "Bearer YOUR_JWT"},
+    json=[{
+        "projectId": "00000000-0000-0000-0000-000000000000",
+        "sharedCloudDriveId": "00000000-0000-0000-0000-000000000000"
+    }],
+)
+```
+
+</details>
+
+
+For error handling, see [Error Model](errors.md).

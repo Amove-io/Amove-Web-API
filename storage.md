@@ -1,6 +1,6 @@
 # Storage Endpoints
 
-This document provides detailed information about the Storage-related endpoints in the AMove API. These endpoints allow you to manage storage keys, buckets, and their associated settings.
+This document provides detailed information about the storage endpoints in the AMove API. These endpoints manage access keys and buckets on the AMove-native IDrive-backed internal storage.
 
 ## Endpoints
 
@@ -12,9 +12,10 @@ This document provides detailed information about the Storage-related endpoints 
 6. [Update Bucket](#update-bucket)
 7. [Delete Bucket](#delete-bucket)
 
+
 ## Get Storage Keys
 
-Retrieves all storage keys for the current user.
+Returns all storage access keys owned by the current user in their account.
 
 - **URL**: `/api/v1/storage/get_storage_key`
 - **Method**: GET
@@ -24,46 +25,41 @@ Retrieves all storage keys for the current user.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| page | integer | 1 | The page number for pagination |
-| pagesize | integer | 50 | The number of items per page |
-| sortfield | string | "CreateDate" | The field to sort the results by |
-| descending | boolean | true | Whether to sort in descending order |
+| page | integer | 1 | Starting page |
+| pagesize | integer | 50 | Page size |
+| sortfield | string | "CreateDate" | Field to sort by |
+| descending | boolean | true | Sort direction |
 
 ### Response
+
+Returns a `DTOCollection<StorageApiKey>`:
 
 ```json
 {
   "data": [
     {
-      "id": "string (uuid)",
-      "userId": "string (uuid)",
-      "accountId": "string (uuid)",
-      "name": "string",
-      "accessKey": "string",
-      "description": "string",
-      "region": "string",
-      "storageDn": "string",
-      "storageTier": "integer (enum)",
-      "createDate": "string (date-time)"
+      "id": "00000000-0000-0000-0000-000000000000",
+      "userId": "00000000-0000-0000-0000-000000000000",
+      "accountId": "00000000-0000-0000-0000-000000000000",
+      "name": "ci-key",
+      "accessKey": "EXAMPLE_ACCESS_KEY",
+      "description": "Write access on selected buckets",
+      "region": "us-east-1",
+      "storageDn": "s3.example.com",
+      "storageTier": 0,
+      "createDate": "2026-01-01T00:00:00Z"
     }
   ],
-  "total": "integer",
-  "options": {
-    "pageSize": "integer",
-    "page": "integer",
-    "sort": [
-      {
-        "field": "string",
-        "descending": "boolean"
-      }
-    ]
-  }
+  "total": 1
 }
 ```
 
+The secret key is never returned by this endpoint; it is only visible once in the [Create Storage Key](#create-storage-key) response.
+
+
 ## Create Storage Key
 
-Creates a new storage key.
+Provisions a new access key on the backing IDrive storage and stores it against the caller's account. The email sent to IDrive is derived from the caller's email plus the `StorageTier` of the selected cloud account (e.g., `user+Tier2@example.com`).
 
 - **URL**: `/api/v1/storage/create_storage_key`
 - **Method**: POST
@@ -76,36 +72,42 @@ Creates a new storage key.
   "name": "string",
   "region": "string",
   "storageDn": "string",
-  "permission": "integer (enum)",
-  "allBuckets": "boolean",
-  "selectedBuckets": [
-    "string"
-  ],
-  "cloudAccountId": "string (uuid)"
+  "permission": "integer (StoragePermission)",
+  "allBuckets": true,
+  "selectedBuckets": ["bucket1", "bucket2"],
+  "cloudAccountId": "00000000-0000-0000-0000-000000000000"
 }
 ```
+
+- `permission` — `0` Read, `1` Write, `2` ReadWrite.
+- `allBuckets` — when `true`, `selectedBuckets` is ignored and the key is scoped to every bucket on the storage.
+- `cloudAccountId` — the `CloudAccount` whose storage tier this key is being issued on.
 
 ### Response
 
+Returns a `ShowStorageApiKey` object — a `StorageApiKey` with the one-time `secretKey` included:
+
 ```json
 {
-  "id": "string (uuid)",
-  "userId": "string (uuid)",
-  "accountId": "string (uuid)",
-  "name": "string",
-  "accessKey": "string",
-  "description": "string",
-  "region": "string",
-  "storageDn": "string",
-  "storageTier": "integer (enum)",
-  "createDate": "string (date-time)",
-  "secretKey": "string"
+  "id": "00000000-0000-0000-0000-000000000000",
+  "userId": "00000000-0000-0000-0000-000000000000",
+  "accountId": "00000000-0000-0000-0000-000000000000",
+  "name": "ci-key",
+  "accessKey": "EXAMPLE_ACCESS_KEY",
+  "secretKey": "SECRET_EXAMPLE_ONLY",
+  "description": "Write access on selected buckets",
+  "region": "us-east-1",
+  "storageDn": "s3.example.com",
+  "createDate": "2026-01-01T00:00:00Z"
 }
 ```
 
+Store the `secretKey` immediately — it is not recoverable after this call.
+
+
 ## Delete Storage Key
 
-Deletes a storage key.
+Revokes a storage access key on the backing IDrive storage and deletes the local record.
 
 - **URL**: `/api/v1/storage/delete_storage_key`
 - **Method**: DELETE
@@ -115,15 +117,16 @@ Deletes a storage key.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| id | string (uuid) | The ID of the storage key to delete |
+| id | string (uuid) | Id of the `StorageApiKey` to delete |
 
 ### Response
 
-A successful deletion returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
+
 
 ## Create Bucket
 
-Creates a new bucket in the current IDrive user's account.
+Creates a new bucket on the internal storage behind the specified `CloudAccount`. When `versioningEnabled` or `isEncrypted` are set, the server issues follow-up calls to enable versioning and server-side encryption. The `cloudAccount` must be an internal-storage account in the caller's account and must be active.
 
 - **URL**: `/api/v1/storage/create_bucket`
 - **Method**: POST
@@ -133,22 +136,23 @@ Creates a new bucket in the current IDrive user's account.
 
 ```json
 {
-  "cloudAccountId": "string (uuid)",
+  "cloudAccountId": "00000000-0000-0000-0000-000000000000",
   "bucketName": "string",
-  "isPublic": "boolean",
-  "isEncrypted": "boolean",
-  "versioningEnabled": "boolean",
-  "objectLockEnabled": "boolean"
+  "isPublic": false,
+  "isEncrypted": false,
+  "versioningEnabled": false,
+  "objectLockEnabled": false
 }
 ```
 
 ### Response
 
-A successful creation returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
+
 
 ## Get Bucket Status
 
-Retrieves the status of a bucket.
+Reports whether a bucket has versioning, encryption, public access, and object-lock enabled.
 
 - **URL**: `/api/v1/storage/bucket_status`
 - **Method**: POST
@@ -158,7 +162,7 @@ Retrieves the status of a bucket.
 
 ```json
 {
-  "cloudAccountId": "string (uuid)",
+  "cloudAccountId": "00000000-0000-0000-0000-000000000000",
   "bucketName": "string"
 }
 ```
@@ -167,16 +171,17 @@ Retrieves the status of a bucket.
 
 ```json
 {
-  "versioningEnabled": "boolean",
-  "encryptionEnabled": "boolean",
-  "isPublic": "boolean",
-  "objectLockEnabled": "boolean"
+  "versioningEnabled": false,
+  "encryptionEnabled": false,
+  "isPublic": false,
+  "objectLockEnabled": false
 }
 ```
 
+
 ## Update Bucket
 
-Updates a bucket in the current IDrive user's account.
+Updates the versioning and encryption flags on an existing bucket. Only flags that differ from the current bucket status trigger an underlying change on the storage.
 
 - **URL**: `/api/v1/storage/update_bucket`
 - **Method**: PUT
@@ -186,21 +191,22 @@ Updates a bucket in the current IDrive user's account.
 
 ```json
 {
-  "cloudAccountId": "string (uuid)",
+  "cloudAccountId": "00000000-0000-0000-0000-000000000000",
   "bucketName": "string",
-  "isPublic": "boolean",
-  "isEncrypted": "boolean",
-  "versioningEnabled": "boolean"
+  "isPublic": false,
+  "isEncrypted": false,
+  "versioningEnabled": false
 }
 ```
 
 ### Response
 
-A successful update returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
+
 
 ## Delete Bucket
 
-Deletes a bucket from the current IDrive user's account.
+Deletes a bucket from the internal storage behind the specified `CloudAccount`.
 
 - **URL**: `/api/v1/storage/delete_bucket`
 - **Method**: DELETE
@@ -210,26 +216,17 @@ Deletes a bucket from the current IDrive user's account.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| cloudAccountId | string (uuid) | The ID of the cloud account |
+| cloudAccountId | string (uuid) | Internal-storage cloud account |
 | bucketName | string | The name of the bucket to delete |
 
 ### Response
 
-A successful deletion returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
 
-## Error Responses
-
-All endpoints may return the following error responses:
-
-- `400 Bad Request`: The request was invalid or cannot be served.
-- `401 Unauthorized`: The request requires authentication.
-- `403 Forbidden`: The server understood the request but refuses to authorize it.
-- `404 Not Found`: The requested resource could not be found.
-- `500 Internal Server Error`: The server encountered an unexpected condition that prevented it from fulfilling the request.
 
 ## Sample Code
 
-### Get Storage Keys
+### Create a storage key and a bucket
 
 <details>
 <summary>Python</summary>
@@ -237,26 +234,35 @@ All endpoints may return the following error responses:
 ```python
 import requests
 
-url = "https://api.amove.com/api/v1/storage/get_storage_key"
-headers = {
-    "Authorization": "Bearer YOUR_TOKEN_HERE"
-}
-params = {
-    "page": 1,
-    "pagesize": 10,
-    "sortfield": "CreateDate",
-    "descending": True
-}
+JWT = "YOUR_JWT"
+BASE = "https://api.amove.io"
 
-response = requests.get(url, headers=headers, params=params)
+key = requests.post(
+    f"{BASE}/api/v1/storage/create_storage_key",
+    headers={"Authorization": f"Bearer {JWT}"},
+    json={
+        "name": "ci-key",
+        "region": "us-east-1",
+        "storageDn": "s3.example.com",
+        "permission": 2,
+        "allBuckets": False,
+        "selectedBuckets": ["team-bucket"],
+        "cloudAccountId": "00000000-0000-0000-0000-000000000000"
+    },
+).json()
+print("Save this secret now:", key["secretKey"])
 
-if response.status_code == 200:
-    storage_keys = response.json()
-    for key in storage_keys['data']:
-        print(f"Storage Key: {key['name']}, Access Key: {key['accessKey']}")
-else:
-    print(f"Error: {response.status_code}")
-    print(response.text)
+requests.post(
+    f"{BASE}/api/v1/storage/create_bucket",
+    headers={"Authorization": f"Bearer {JWT}"},
+    json={
+        "cloudAccountId": "00000000-0000-0000-0000-000000000000",
+        "bucketName": "team-bucket",
+        "isEncrypted": True,
+        "versioningEnabled": True,
+        "objectLockEnabled": False
+    },
+)
 ```
 
 </details>
@@ -265,70 +271,59 @@ else:
 <summary>JavaScript</summary>
 
 ```javascript
-fetch('https://api.amove.com/api/v1/storage/get_storage_key?page=1&pagesize=10&sortfield=CreateDate&descending=true', {
-  method: 'GET',
-  headers: {
-    'Authorization': 'Bearer YOUR_TOKEN_HERE'
-  }
-})
-.then(response => {
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-  return response.json();
-})
-.then(data => {
-  data.data.forEach(key => {
-    console.log(`Storage Key: ${key.name}, Access Key: ${key.accessKey}`);
-  });
-})
-.catch(error => {
-  console.error('Error:', error);
-});
+const JWT = "YOUR_JWT";
+const BASE = "https://api.amove.io";
+
+const key = await fetch(`${BASE}/api/v1/storage/create_storage_key`, {
+  method: "POST",
+  headers: { "Authorization": `Bearer ${JWT}`, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    name: "ci-key",
+    region: "us-east-1",
+    storageDn: "s3.example.com",
+    permission: 2,
+    allBuckets: false,
+    selectedBuckets: ["team-bucket"],
+    cloudAccountId: "00000000-0000-0000-0000-000000000000"
+  })
+}).then(r => r.json());
+console.log("Save this secret now:", key.secretKey);
 ```
 
 </details>
+
+### Inspect and update a bucket's flags
 
 <details>
 <summary>C#</summary>
 
 ```csharp
-using System;
 using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
+using System.Net.Http.Json;
+using System.Text.Json;
 
-class Program
+using var client = new HttpClient { BaseAddress = new Uri("https://api.amove.io/") };
+client.DefaultRequestHeaders.Authorization =
+    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "YOUR_JWT");
+
+var status = await (await client.PostAsJsonAsync("api/v1/storage/bucket_status", new
 {
-    static async Task Main(string[] args)
-    {
-        using (var client = new HttpClient())
-        {
-            client.BaseAddress = new Uri("https://api.amove.com/");
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "YOUR_TOKEN_HERE");
+    cloudAccountId = Guid.Parse("00000000-0000-0000-0000-000000000000"),
+    bucketName = "team-bucket"
+})).Content.ReadFromJsonAsync<JsonElement>();
 
-            var response = await client.GetAsync("api/v1/storage/get_storage_key?page=1&pagesize=10&sortfield=CreateDate&descending=true");
+Console.WriteLine(status);
 
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                var storageKeys = JObject.Parse(content);
-                foreach (var key in storageKeys["data"])
-                {
-                    Console.WriteLine($"Storage Key: {key["name"]}, Access Key: {key["accessKey"]}");
-                }
-            }
-            else
-            {
-                Console.WriteLine($"Error: {response.StatusCode}");
-            }
-        }
-    }
-}
+await client.PutAsJsonAsync("api/v1/storage/update_bucket", new
+{
+    cloudAccountId = Guid.Parse("00000000-0000-0000-0000-000000000000"),
+    bucketName = "team-bucket",
+    isEncrypted = true,
+    versioningEnabled = true
+});
 ```
 
 </details>
 
-For more detailed examples and usage of other endpoints, please refer to our [Examples Directory](examples/README.md).
 
+For error handling, see [Error Model](errors.md).

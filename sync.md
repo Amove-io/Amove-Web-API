@@ -1,19 +1,20 @@
 # Sync Endpoints
 
-This document provides detailed information about the Sync-related endpoints in the AMove API. These endpoints allow you to manage synchronization tasks between cloud storage accounts.
+This document provides detailed information about the sync endpoints in the AMove API. A sync entity replicates objects from a source cloud bucket to a destination cloud bucket on a repeating schedule. Access is restricted to `ProviderAdmin`, `AccountAdmin`, and `AccountUser`.
 
 ## Endpoints
 
-1. [Get All Sync Entities](#get-all-sync-entities)
+1. [Get All Syncs](#get-all-syncs)
 2. [Get Sync Jobs](#get-sync-jobs)
-3. [Get Sync Entity](#get-sync-entity)
-4. [Insert Sync Entity](#insert-sync-entity)
-5. [Activate/Deactivate Sync Entity](#activatedeactivate-sync-entity)
-6. [Delete Sync Entity](#delete-sync-entity)
+3. [Get Sync](#get-sync)
+4. [Insert Sync](#insert-sync)
+5. [Activate Sync](#activate-sync)
+6. [Delete Sync](#delete-sync)
 
-## Get All Sync Entities
 
-Retrieves the list of sync entities associated with the current user's account.
+## Get All Syncs
+
+Returns every sync entity owned by users in the current user's account. Cloud-account credentials on the source and destination are obfuscated before return.
 
 - **URL**: `/api/v1/sync/get_all`
 - **Method**: GET
@@ -26,55 +27,40 @@ Retrieves the list of sync entities associated with the current user's account.
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "CreateDate" | Field to sort by |
-| descending | boolean | true | Sort direction; descending: true |
+| descending | boolean | true | Sort direction |
 
 ### Response
+
+Returns a `DTOCollection<SyncInfo>`:
 
 ```json
 {
   "data": [
     {
-      "id": "string (uuid)",
-      "userId": "string (uuid)",
-      "sourceCloudAccountId": "string (uuid)",
-      "sourceBucket": "string",
-      "sourceRegion": "string",
-      "destinationCloudAccountId": "string (uuid)",
-      "destinationBucket": "string",
-      "destinationRegion": "string",
-      "allowDelete": "boolean",
-      "active": "boolean",
-      "autoDeactive": "boolean",
-      "deleted": "boolean",
-      "createDate": "string (date-time)",
-      "user": {
-        // User object
-      },
-      "sourceCloudAccount": {
-        // CloudAccount object
-      },
-      "destinationCloudAccount": {
-        // CloudAccount object
-      }
+      "id": "00000000-0000-0000-0000-000000000000",
+      "userId": "00000000-0000-0000-0000-000000000000",
+      "sourceCloudAccountId": "00000000-0000-0000-0000-000000000000",
+      "sourceBucket": "source-bucket",
+      "sourceRegion": "us-east-1",
+      "destinationCloudAccountId": "00000000-0000-0000-0000-000000000000",
+      "destinationBucket": "destination-bucket",
+      "destinationRegion": "us-west-2",
+      "allowDelete": false,
+      "active": true,
+      "deleted": false,
+      "createDate": "2026-01-01T00:00:00Z",
+      "sourceCloudAccount": { },
+      "destinationCloudAccount": { }
     }
   ],
-  "total": "integer",
-  "options": {
-    "pageSize": "integer",
-    "page": "integer",
-    "sort": [
-      {
-        "field": "string",
-        "descending": "boolean"
-      }
-    ]
-  }
+  "total": 1
 }
 ```
 
+
 ## Get Sync Jobs
 
-Retrieves the list of sync jobs associated with the current user's account.
+Returns every sync entity in the account alongside its most recent cycle and the last error (if any).
 
 - **URL**: `/api/v1/sync/get_jobs`
 - **Method**: GET
@@ -86,41 +72,27 @@ Retrieves the list of sync jobs associated with the current user's account.
 |-----------|------|---------|-------------|
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
-| sortfield | string | "Info.CreateDate" | Field to sort by |
-| descending | boolean | true | Sort direction; descending: true |
+| sortfield | string | "Info.CreateDate" | Field to sort by (properties of the inner `Info` are prefixed with `Info.`) |
+| descending | boolean | true | Sort direction |
 
 ### Response
 
+Returns a `DTOCollection<SyncInfoJob>`. Each item:
+
 ```json
 {
-  "data": [
-    {
-      "lastError": "string",
-      "lastCycle": {
-        // SyncCycle object
-      },
-      "info": {
-        // SyncInfo object
-      }
-    }
-  ],
-  "total": "integer",
-  "options": {
-    "pageSize": "integer",
-    "page": "integer",
-    "sort": [
-      {
-        "field": "string",
-        "descending": "boolean"
-      }
-    ]
-  }
+  "info": { },
+  "lastCycle": { },
+  "lastError": ""
 }
 ```
 
-## Get Sync Entity
+Cloud-account credentials on the nested `info` are obfuscated before return.
 
-Retrieves a sync entity by the specified id.
+
+## Get Sync
+
+Retrieves a single sync entity by id. The sync must belong to a user in the caller's account; otherwise `NOT_FOUND` is returned.
 
 - **URL**: `/api/v1/sync/get`
 - **Method**: GET
@@ -130,15 +102,23 @@ Retrieves a sync entity by the specified id.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| id | string (uuid) | Sync entity id |
+| id | string (uuid) | Id of the sync entity |
 
 ### Response
 
-Returns a `SyncInfo` object.
+Returns the `SyncInfo` object (see [Get All Syncs](#get-all-syncs) for shape).
 
-## Insert Sync Entity
 
-Creates a sync entity.
+## Insert Sync
+
+Creates a new sync entity. The server:
+
+- Stamps `userId` from the caller and `createDate` to the current UTC time.
+- Validates that the source and destination cloud providers are permitted by the server configuration.
+- Rejects same-account + same-bucket source/destination, and rejects a second sync on the same source bucket.
+- Calculates source and destination regions from the underlying cloud providers and enforces any transfer-cost rules.
+- Enables storage logging on the source cloud when the provider supports it; if not supported, the insert is rejected with error code `SYNC`.
+- Raises the `sync.create` event for email notification.
 
 - **URL**: `/api/v1/sync/insert`
 - **Method**: POST
@@ -148,24 +128,23 @@ Creates a sync entity.
 
 ```json
 {
-  "userId": "string (uuid)",
-  "sourceCloudAccountId": "string (uuid)",
-  "sourceBucket": "string",
-  "sourceRegion": "string",
-  "destinationCloudAccountId": "string (uuid)",
-  "destinationBucket": "string",
-  "destinationRegion": "string",
-  "allowDelete": "boolean",
-  "active": "boolean",
-  "autoDeactive": "boolean"
+  "sourceCloudAccountId": "00000000-0000-0000-0000-000000000000",
+  "sourceBucket": "source-bucket",
+  "destinationCloudAccountId": "00000000-0000-0000-0000-000000000000",
+  "destinationBucket": "destination-bucket",
+  "allowDelete": false,
+  "active": true
 }
 ```
 
+- `allowDelete` — when `true`, objects deleted from the source bucket are also deleted in the destination on the next cycle.
+
 ### Response
 
-A successful creation returns a `200 OK` status with no body.
+A `200 OK` status with no body on success.
 
-## Activate/Deactivate Sync Entity
+
+## Activate Sync
 
 Activates or deactivates a sync entity.
 
@@ -177,18 +156,19 @@ Activates or deactivates a sync entity.
 
 ```json
 {
-  "id": "string (uuid)",
-  "active": "boolean"
+  "id": "00000000-0000-0000-0000-000000000000",
+  "active": true
 }
 ```
 
 ### Response
 
-A successful activation/deactivation returns a `200 OK` status with no body.
+A `200 OK` status with no body on success. If the sync does not belong to the caller's account, `NOT_FOUND` is returned.
 
-## Delete Sync Entity
 
-Deletes a sync entity.
+## Delete Sync
+
+Soft-deletes a sync entity and disables storage logging on its source bucket if the provider supports it. Because `SyncInfo` implements `ILogicalDeleteableEntity`, the record is marked `Deleted = true` rather than physically removed.
 
 - **URL**: `/api/v1/sync/delete`
 - **Method**: DELETE
@@ -198,25 +178,16 @@ Deletes a sync entity.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| id | string (uuid) | Sync entity id |
+| id | string (uuid) | Id of the sync entity to delete |
 
 ### Response
 
-Returns a boolean indicating success or failure.
+Returns a boolean indicating whether at least one record was deleted.
 
-## Error Responses
-
-All endpoints may return the following error responses:
-
-- `400 Bad Request`: The request was invalid or cannot be served.
-- `401 Unauthorized`: The request requires authentication.
-- `403 Forbidden`: The server understood the request but refuses to authorize it.
-- `404 Not Found`: The requested resource could not be found.
-- `500 Internal Server Error`: The server encountered an unexpected condition that prevented it from fulfilling the request.
 
 ## Sample Code
 
-### Get All Sync Entities
+### Create and activate a sync
 
 <details>
 <summary>Python</summary>
@@ -224,26 +195,27 @@ All endpoints may return the following error responses:
 ```python
 import requests
 
-url = "https://api.amove.com/api/v1/sync/get_all"
-headers = {
-    "Authorization": "Bearer YOUR_TOKEN_HERE"
-}
-params = {
-    "page": 1,
-    "pagesize": 10,
-    "sortfield": "CreateDate",
-    "descending": True
-}
+JWT = "YOUR_JWT"
+BASE = "https://api.amove.io"
 
-response = requests.get(url, headers=headers, params=params)
+sync = requests.post(
+    f"{BASE}/api/v1/sync/insert",
+    headers={"Authorization": f"Bearer {JWT}"},
+    json={
+        "sourceCloudAccountId": "00000000-0000-0000-0000-000000000000",
+        "sourceBucket": "source-bucket",
+        "destinationCloudAccountId": "00000000-0000-0000-0000-000000000000",
+        "destinationBucket": "destination-bucket",
+        "allowDelete": False,
+        "active": True
+    },
+)
 
-if response.status_code == 200:
-    sync_entities = response.json()
-    for entity in sync_entities['data']:
-        print(f"Sync Entity: {entity['id']}, Source: {entity['sourceBucket']}, Destination: {entity['destinationBucket']}")
-else:
-    print(f"Error: {response.status_code}")
-    print(response.text)
+requests.post(
+    f"{BASE}/api/v1/sync/activate",
+    headers={"Authorization": f"Bearer {JWT}"},
+    json={"id": "00000000-0000-0000-0000-000000000000", "active": True},
+)
 ```
 
 </details>
@@ -252,70 +224,43 @@ else:
 <summary>JavaScript</summary>
 
 ```javascript
-fetch('https://api.amove.com/api/v1/sync/get_all?page=1&pagesize=10&sortfield=CreateDate&descending=true', {
-  method: 'GET',
-  headers: {
-    'Authorization': 'Bearer YOUR_TOKEN_HERE'
-  }
-})
-.then(response => {
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-  return response.json();
-})
-.then(data => {
-  data.data.forEach(entity => {
-    console.log(`Sync Entity: ${entity.id}, Source: ${entity.sourceBucket}, Destination: ${entity.destinationBucket}`);
-  });
-})
-.catch(error => {
-  console.error('Error:', error);
+const JWT = "YOUR_JWT";
+const BASE = "https://api.amove.io";
+
+await fetch(`${BASE}/api/v1/sync/insert`, {
+  method: "POST",
+  headers: { "Authorization": `Bearer ${JWT}`, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    sourceCloudAccountId: "00000000-0000-0000-0000-000000000000",
+    sourceBucket: "source-bucket",
+    destinationCloudAccountId: "00000000-0000-0000-0000-000000000000",
+    destinationBucket: "destination-bucket",
+    allowDelete: false,
+    active: true
+  })
 });
 ```
 
 </details>
 
+### List sync jobs with their last cycle
+
 <details>
 <summary>C#</summary>
 
 ```csharp
-using System;
 using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
 
-class Program
-{
-    static async Task Main(string[] args)
-    {
-        using (var client = new HttpClient())
-        {
-            client.BaseAddress = new Uri("https://api.amove.com/");
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "YOUR_TOKEN_HERE");
+using var client = new HttpClient();
+client.DefaultRequestHeaders.Authorization =
+    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "YOUR_JWT");
 
-            var response = await client.GetAsync("api/v1/sync/get_all?page=1&pagesize=10&sortfield=CreateDate&descending=true");
-
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                var syncEntities = JObject.Parse(content);
-                foreach (var entity in syncEntities["data"])
-                {
-                    Console.WriteLine($"Sync Entity: {entity["id"]}, Source: {entity["sourceBucket"]}, Destination: {entity["destinationBucket"]}");
-                }
-            }
-            else
-            {
-                Console.WriteLine($"Error: {response.StatusCode}");
-            }
-        }
-    }
-}
+var res = await client.GetAsync(
+    "https://api.amove.io/api/v1/sync/get_jobs?page=1&pagesize=50");
+Console.WriteLine(await res.Content.ReadAsStringAsync());
 ```
 
 </details>
 
-For more detailed examples and usage of other endpoints, please refer to our [Examples Directory](examples/README.md).
 
+For error handling, see [Error Model](errors.md).

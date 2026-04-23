@@ -1,26 +1,48 @@
 # User Endpoints
 
-This document provides detailed information about the User-related endpoints in the AMove API. These endpoints allow you to manage user accounts, authentication, and user-related operations.
+This document provides detailed information about the user-related endpoints in the AMove API. These endpoints cover self-service profile operations, account-owner subscription changes, MFA enrollment, admin-side user invitation and management, and the email-token signup flow.
 
 ## Endpoints
 
-1. [Sign Up](#sign-up)
-2. [Get Sign Up Info](#get-sign-up-info)
+1. [Get Signup Info](#get-signup-info)
+2. [User Signup](#user-signup)
 3. [Get User Info](#get-user-info)
 4. [Update User](#update-user)
 5. [Update Subscription](#update-subscription)
 6. [Reset Password](#reset-password)
-7. [Set MFA](#set-mfa)
-8. [Generate MFA Token](#generate-mfa-token)
+7. [Generate MFA Token](#generate-mfa-token)
+8. [Set MFA Preference](#set-mfa-preference)
 9. [Get All Users](#get-all-users)
-10. [Insert User](#insert-user)
-11. [Edit User](#edit-user)
-12. [Delete User](#delete-user)
-13. [Resend User Email](#resend-user-email)
+10. [Get All Users With Details](#get-all-users-with-details)
+11. [Insert User](#insert-user)
+12. [Edit User](#edit-user)
+13. [Delete User](#delete-user)
+14. [Resend User Email](#resend-user-email)
+15. [Package Inquiry](#package-inquiry)
 
-## Sign Up
 
-Requests a user sign-up.
+## Get Signup Info
+
+Resolves a signup invitation token emailed to a new user and returns the pending user record it is bound to. Used by the signup landing page to pre-fill the form and confirm the token is still valid.
+
+- **URL**: `/api/v1/user/signupinfo`
+- **Method**: GET
+- **Auth Required**: No
+
+### Query Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| token | string | Signup token received by email. |
+
+### Response
+
+Returns the pending `User` record associated with the token. If the token is invalid or expired, the response is a `499` with error code `TOKEN`.
+
+
+## User Signup
+
+Finalizes a user signup using the token from the invitation email. Sets the first name, last name, and password on the pending user, flips the account to active, and completes provisioning with the identity provider.
 
 - **URL**: `/api/v1/user/signup`
 - **Method**: POST
@@ -39,29 +61,12 @@ Requests a user sign-up.
 
 ### Response
 
-Returns the created User object.
+Returns the finalized `User` object.
 
-## Get Sign Up Info
-
-Gets a user sign-up information. The user entity must have a non-expired sign-up token.
-
-- **URL**: `/api/v1/user/signupinfo`
-- **Method**: GET
-- **Auth Required**: No
-
-### Query Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| token | string | User's sign-up token previously sent by email |
-
-### Response
-
-Returns a UserStatus enum value.
 
 ## Get User Info
 
-Requests for currently logged-in user information.
+Returns the profile of the currently authenticated user, enriched with account metadata (account id, name, subscription type, migration flag, and authentication provider).
 
 - **URL**: `/api/v1/user/userinfo`
 - **Method**: GET
@@ -69,11 +74,27 @@ Requests for currently logged-in user information.
 
 ### Response
 
-Returns a UserInfo object containing details about the current user.
+```json
+{
+  "userId": "string (uuid)",
+  "username": "string",
+  "firstname": "string",
+  "lastname": "string",
+  "userType": "integer (UserType)",
+  "mfa": "boolean",
+  "migration": "boolean",
+  "owner": "boolean",
+  "accountId": "string (uuid)",
+  "accountName": "string",
+  "subscriptionType": "integer (AccountSubscriptionType)",
+  "authProvider": "integer (AuthProvider)"
+}
+```
+
 
 ## Update User
 
-Update user's information.
+Updates the authenticated user's first name, last name, and account display name.
 
 - **URL**: `/api/v1/user/update_user`
 - **Method**: PUT
@@ -91,11 +112,12 @@ Update user's information.
 
 ### Response
 
-Returns the updated UserInfo object.
+Returns the updated `UserInfo` object (same schema as [Get User Info](#get-user-info)).
+
 
 ## Update Subscription
 
-Updates the user's subscription.
+Changes the billing cadence of the account's subscription (monthly or yearly). Only the account owner may call this; any other user receives `400 Bad Request`.
 
 - **URL**: `/api/v1/user/update_subscription`
 - **Method**: PUT
@@ -105,17 +127,20 @@ Updates the user's subscription.
 
 ```json
 {
-  "subscriptionType": "integer (enum)"
+  "subscriptionType": "integer (AccountSubscriptionType)"
 }
 ```
 
+`subscriptionType` values: `1` = Monthly, `2` = Yearly.
+
 ### Response
 
-A successful update returns a `200 OK` status with no body.
+`200 OK` with an empty body.
+
 
 ## Reset Password
 
-Requests a reset password procedure.
+Resets the authenticated user's password. The caller must supply both the current password and the new password.
 
 - **URL**: `/api/v1/user/reset_password`
 - **Method**: POST
@@ -132,11 +157,25 @@ Requests a reset password procedure.
 
 ### Response
 
-A successful password reset returns a `200 OK` status with no body.
+`200 OK` with an empty body.
 
-## Set MFA
 
-Enables/Disables the user's multi-factor authentication (MFA) preference.
+## Generate MFA Token
+
+Requests a shared secret key for associating a software-based TOTP authenticator (e.g., Google Authenticator, Authy, 1Password) with the authenticated user. The returned string is the TOTP seed the client displays as a QR code or formats into an `otpauth://` URI.
+
+- **URL**: `/api/v1/user/generate_mfa_token`
+- **Method**: POST
+- **Auth Required**: Yes
+
+### Response
+
+A plain string containing the TOTP secret. Pass this to the authenticator app and then confirm with [Set MFA Preference](#set-mfa-preference).
+
+
+## Set MFA Preference
+
+Enables or disables software-token MFA for the authenticated user. When enabling, the caller must include a current TOTP code proving the authenticator app is correctly configured with the secret issued by [Generate MFA Token](#generate-mfa-token).
 
 - **URL**: `/api/v1/user/set_mfa`
 - **Method**: POST
@@ -151,25 +190,17 @@ Enables/Disables the user's multi-factor authentication (MFA) preference.
 }
 ```
 
-### Response
-
-A successful MFA preference update returns a `200 OK` status with no body.
-
-## Generate MFA Token
-
-Returns a unique generated shared secret key code for the user account.
-
-- **URL**: `/api/v1/user/generate_mfa_token`
-- **Method**: POST
-- **Auth Required**: Yes
+- `enabled` — `true` to enable MFA, `false` to disable.
+- `userCode` — the current 6-digit TOTP code from the authenticator app (required when enabling; ignored when disabling).
 
 ### Response
 
-Returns a string containing the generated MFA token.
+`200 OK` with an empty body.
+
 
 ## Get All Users
 
-Retrieves the list of users defined in the system.
+Returns a paginated list of users in the authenticated user's account. Supports filters on status, type, and username.
 
 - **URL**: `/api/v1/user/get_all_users`
 - **Method**: GET
@@ -182,19 +213,70 @@ Retrieves the list of users defined in the system.
 | page | integer | 1 | Starting page |
 | pagesize | integer | 50 | Page size |
 | sortfield | string | "CreateDate" | Field to sort by |
-| descending | boolean | true | Sort direction; descending: true |
-| deleted | boolean | false | When true, includes deleted records in the result |
-| userStatus | integer (enum) | - | When provided, includes only records with the specified status |
-| userType | integer (enum) | - | When provided, includes only records with the specified type |
-| username | string | - | When provided, looks for a specified username |
+| descending | boolean | true | Sort direction |
+| deleted | boolean | false | When true, includes deleted records |
+| userStatus | integer (flags) | `Active \| Inactive \| Pending` | Filter by user status |
+| userType | integer (flags) | `All` | Filter by user type |
+| username | string | null | Case-insensitive substring match on username |
 
 ### Response
 
-Returns a collection of User objects.
+Returns a `DTOCollection<User>`.
+
+
+## Get All Users With Details
+
+Same listing semantics as [Get All Users](#get-all-users), but each row also includes the user's groups, project permissions, and shared-cloud-drive permissions inline to eliminate the N+1 fetch pattern.
+
+- **URL**: `/api/v1/user/get_all_users_with_details`
+- **Method**: GET
+- **Auth Required**: Yes
+
+### Query Parameters
+
+Same as [Get All Users](#get-all-users).
+
+### Response
+
+Returns a `DTOCollection<UserWithDetailsDTO>` where each element looks like:
+
+```json
+{
+  "id": "string (uuid)",
+  "email": "string",
+  "username": "string",
+  "firstname": "string",
+  "lastname": "string",
+  "userType": "integer (UserType)",
+  "status": "integer (UserStatus)",
+  "groups": [
+    {
+      "user": { },
+      "userGroup": { },
+      "userUserGroup": { }
+    }
+  ],
+  "projectsData": [
+    {
+      "user": { },
+      "project": { },
+      "permission": { }
+    }
+  ],
+  "drivesData": [
+    {
+      "user": { },
+      "sharedClouDrive": { },
+      "permission": { }
+    }
+  ]
+}
+```
+
 
 ## Insert User
 
-Creates a temp user in the system, with a temporary token.
+Creates a pending user in the caller's account, generates a signup token with a configurable expiration window, and emails the invitation. The endpoint also records a billing/subscription line for the invited user based on the account's current package limits. The username must be a valid email address.
 
 - **URL**: `/api/v1/user/insert_user`
 - **Method**: POST
@@ -202,15 +284,24 @@ Creates a temp user in the system, with a temporary token.
 
 ### Request Body
 
-User object
+```json
+{
+  "username": "string (email)",
+  "email": "string (email)",
+  "firstname": "string",
+  "lastname": "string",
+  "userType": "integer (UserType)"
+}
+```
 
 ### Response
 
-Returns the created User object.
+Returns the newly-created pending `User` (status `Pending`) with a signup token already emailed.
+
 
 ## Edit User
 
-Update existing user in the system.
+Updates an existing user's type. Owner users cannot have their type changed.
 
 - **URL**: `/api/v1/user/edit_user`
 - **Method**: PUT
@@ -218,15 +309,21 @@ Update existing user in the system.
 
 ### Request Body
 
-User object
+```json
+{
+  "id": "string (uuid)",
+  "userType": "integer (UserType)"
+}
+```
 
 ### Response
 
-Returns the updated User object.
+Returns the updated `User` object.
+
 
 ## Delete User
 
-Delete existing user in the system.
+Soft-deletes a user in the caller's account and unsubscribes any associated invited-user billing line.
 
 - **URL**: `/api/v1/user/delete_user`
 - **Method**: DELETE
@@ -236,41 +333,64 @@ Delete existing user in the system.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| id | string (uuid) | ID of the user to delete |
+| id | string (uuid) | The user id to delete. |
 
 ### Response
 
-A successful deletion returns a `200 OK` status with no body.
+`200 OK` with an empty body.
+
 
 ## Resend User Email
 
-Re-sends the sign-up email to the specified user.
+Resends the signup invitation email for a pending user, regenerating the signup token in the process. If no pending user matches the supplied username, the endpoint returns `400 Bad Request`.
 
 - **URL**: `/api/v1/user/resend_user_email`
 - **Method**: POST
-- **Auth Required**: Yes
+- **Auth Required**: No
 
 ### Request Body
 
-User object
+```json
+{
+  "username": "string"
+}
+```
 
 ### Response
 
-A successful email resend returns a `200 OK` status with no body.
+`200 OK` with an empty body.
 
-## Error Responses
 
-All endpoints may return the following error responses:
+## Package Inquiry
 
-- `400 Bad Request`: The request was invalid or cannot be served.
-- `401 Unauthorized`: The request requires authentication.
-- `403 Forbidden`: The server understood the request but refuses to authorize it.
-- `404 Not Found`: The requested resource could not be found.
-- `500 Internal Server Error`: The server encountered an unexpected condition that prevented it from fulfilling the request.
+Returns the remaining capacity on the account's current product package — how many more admin, creative, and standard user slots, cloud connections, and other entitlements the account may consume. When capacity has been reached, the corresponding field will be `0`.
+
+- **URL**: `/api/v1/user/package_inquiry`
+- **Method**: GET
+- **Auth Required**: Yes
+
+### Response
+
+```json
+{
+  "adminUsers": "integer",
+  "creativeUsers": "integer",
+  "standardUsers": "integer",
+  "storage": "integer",
+  "connections": "integer",
+  "projects": "integer",
+  "teams": "integer",
+  "drives": "integer",
+  "syncs": "integer",
+  "logs": "boolean",
+  "sso": "boolean"
+}
+```
+
 
 ## Sample Code
 
-### Get User Info
+### Get the current user's profile
 
 <details>
 <summary>Python</summary>
@@ -278,21 +398,11 @@ All endpoints may return the following error responses:
 ```python
 import requests
 
-url = "https://api.amove.com/api/v1/user/userinfo"
-headers = {
-    "Authorization": "Bearer YOUR_TOKEN_HERE"
-}
-
-response = requests.get(url, headers=headers)
-
-if response.status_code == 200:
-    user_info = response.json()
-    print(f"Username: {user_info['username']}")
-    print(f"Email: {user_info['email']}")
-    print(f"User Type: {user_info['userType']}")
-else:
-    print(f"Error: {response.status_code}")
-    print(response.text)
+response = requests.get(
+    "https://api.amove.io/api/v1/user/userinfo",
+    headers={"Authorization": "Bearer EXAMPLE_TOKEN"}
+)
+print(response.json())
 ```
 
 </details>
@@ -301,26 +411,10 @@ else:
 <summary>JavaScript</summary>
 
 ```javascript
-fetch('https://api.amove.com/api/v1/user/userinfo', {
-  method: 'GET',
-  headers: {
-    'Authorization': 'Bearer YOUR_TOKEN_HERE'
-  }
-})
-.then(response => {
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-  return response.json();
-})
-.then(userInfo => {
-  console.log(`Username: ${userInfo.username}`);
-  console.log(`Email: ${userInfo.email}`);
-  console.log(`User Type: ${userInfo.userType}`);
-})
-.catch(error => {
-  console.error('Error:', error);
+const res = await fetch("https://api.amove.io/api/v1/user/userinfo", {
+  headers: { "Authorization": "Bearer EXAMPLE_TOKEN" }
 });
+console.log(await res.json());
 ```
 
 </details>
@@ -329,41 +423,84 @@ fetch('https://api.amove.com/api/v1/user/userinfo', {
 <summary>C#</summary>
 
 ```csharp
-using System;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
+using var client = new HttpClient();
+client.DefaultRequestHeaders.Authorization =
+    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "EXAMPLE_TOKEN");
 
-class Program
-{
-    static async Task Main(string[] args)
-    {
-        using (var client = new HttpClient())
-        {
-            client.BaseAddress = new Uri("https://api.amove.com/");
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "YOUR_TOKEN_HERE");
-
-            var response = await client.GetAsync("api/v1/user/userinfo");
-
-            if (response.IsSuccessStatusCode)
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                var userInfo = JObject.Parse(content);
-                Console.WriteLine($"Username: {userInfo["username"]}");
-                Console.WriteLine($"Email: {userInfo["email"]}");
-                Console.WriteLine($"User Type: {userInfo["userType"]}");
-            }
-            else
-            {
-                Console.WriteLine($"Error: {response.StatusCode}");
-            }
-        }
-    }
-}
+HttpResponseMessage res = await client.GetAsync("https://api.amove.io/api/v1/user/userinfo");
+Console.WriteLine(await res.Content.ReadAsStringAsync());
 ```
 
 </details>
 
-For more detailed examples and usage of other endpoints, please refer to our [Examples Directory](examples/README.md).
+### Invite a new user (admin)
 
+<details>
+<summary>Python</summary>
+
+```python
+import requests
+
+response = requests.post(
+    "https://api.amove.io/api/v1/user/insert_user",
+    headers={"Authorization": "Bearer EXAMPLE_TOKEN"},
+    json={
+        "username": "newuser@example.com",
+        "email": "newuser@example.com",
+        "firstname": "New",
+        "lastname": "User",
+        "userType": 32
+    }
+)
+print(response.json())
+```
+
+</details>
+
+<details>
+<summary>JavaScript</summary>
+
+```javascript
+const res = await fetch("https://api.amove.io/api/v1/user/insert_user", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer EXAMPLE_TOKEN",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    username: "newuser@example.com",
+    email: "newuser@example.com",
+    firstname: "New",
+    lastname: "User",
+    userType: 32
+  })
+});
+console.log(await res.json());
+```
+
+</details>
+
+### Finalize signup from the invitation email
+
+<details>
+<summary>Python</summary>
+
+```python
+import requests
+
+response = requests.post(
+    "https://api.amove.io/api/v1/user/signup",
+    json={
+        "firstname": "New",
+        "lastname": "User",
+        "password": "CHOSEN_PASSWORD",
+        "token": "EXAMPLE_TOKEN"
+    }
+)
+print(response.json())
+```
+
+</details>
+
+
+For error handling, see [Error Model](errors.md).
